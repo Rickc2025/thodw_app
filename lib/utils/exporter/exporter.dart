@@ -1,6 +1,13 @@
-// Facade that picks the right implementation per platform (web or io).
-import 'exporter_stub.dart'
-    if (dart.library.html) 'exporter_web.dart'
-    if (dart.library.io) 'exporter_io.dart';
+// Facade that routes to the right implementation per platform.
+import 'exporter_impl_stub.dart'
+    if (dart.library.html) 'exporter_impl_web.dart'
+    if (dart.library.io) 'exporter_impl_io.dart'
+    as impl;
 
-export 'exporter_stub.dart';
+class Exporter {
+  static Future<void> saveCsv(String baseName, String csv) =>
+      impl.saveCsv(baseName, csv);
+
+  static Future<void> saveXls(String baseName, String xmlXls) =>
+      impl.saveXls(baseName, xmlXls);
+}
