@@ -1659,7 +1659,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                     final int? tag = checkedInTag(name);
                     final Color bg = isSel
                         ? Colors.green
-                        : Colors.blueGrey; // neutral for other depts
+                        : Colors.blueGrey; // neutral
                     return Stack(
                       children: [
                         ElevatedButton(
@@ -2418,13 +2418,30 @@ class _HistoryPageState extends State<HistoryPage> {
     super.dispose();
   }
 
-  // Logs with IN-first ordering, using per-row _isCurrentlyIn flag (only latest row)
+  // Compute the visible list, and mark ONLY the single latest IN row per diver as current.
   List<Map> getLogsFiltered() {
-    final logs = logsBox.get('logsList', defaultValue: <Map>[]);
+    final raw = logsBox.get('logsList', defaultValue: <Map>[]);
     // newest first
-    List<Map> logsList = List<Map>.from(logs).reversed.toList();
+    final List<Map> allNewestFirst = List<Map>.from(raw).reversed.toList();
 
-    // filter by aquacoulisse for non-Checked-In tabs
+    // 1) Determine latest event and latest IN datetime per diver (across ALL colors)
+    final Map<String, Map> latestEventByKey = {}; // key -> latest event
+    final Map<String, String> latestInDtByKey = {}; // key -> latest IN datetime
+    for (final log in allNewestFirst) {
+      final key = "${log['name']}|${log['tag']}";
+      // First hit in newest-first order is the latest event
+      latestEventByKey.putIfAbsent(key, () => log);
+      if ((log['status'] ?? '') == 'IN' && !latestInDtByKey.containsKey(key)) {
+        latestInDtByKey[key] = (log['datetime'] ?? '').toString();
+      }
+    }
+    final Set<String> keysCurrentlyIn = latestEventByKey.entries
+        .where((e) => (e.value['status'] ?? '') == 'IN')
+        .map((e) => e.key)
+        .toSet();
+
+    // 2) Build the list for display and apply color filter (if any)
+    List<Map> logsList = List<Map>.from(allNewestFirst);
     if (tab != "ALL" && tab != "CHECKED-IN") {
       logsList = logsList
           .where(
@@ -2434,14 +2451,14 @@ class _HistoryPageState extends State<HistoryPage> {
           .toList();
     }
 
-    // Compute durations for OUT rows
+    // 3) Compute durations for OUT rows (within the visible list)
     final Map<String, Map> lastIN = {};
     for (int i = logsList.length - 1; i >= 0; i--) {
       final log = logsList[i];
+      final key = "${log['name']}|${log['tag']}";
       if (log['status'] == 'IN') {
-        lastIN["${log['name']}|${log['tag']}"] = log;
+        lastIN[key] = log;
       } else if (log['status'] == 'OUT') {
-        final key = "${log['name']}|${log['tag']}";
         if (lastIN.containsKey(key)) {
           try {
             final inTime = DateTime.parse(lastIN[key]!['datetime']);
@@ -2455,29 +2472,21 @@ class _HistoryPageState extends State<HistoryPage> {
       }
     }
 
-    // Find latest index for each (name|tag)
-    final Map<String, int> latestIndexByKey = {};
-    for (int i = 0; i < logsList.length; i++) {
-      final k = "${logsList[i]['name']}|${logsList[i]['tag']}";
-      latestIndexByKey.putIfAbsent(k, () => i); // newest-first list
+    // 4) Flag "currently IN" only on the single latest IN row (global) per diver
+    for (final log in logsList) {
+      final key = "${log['name']}|${log['tag']}";
+      final dt = (log['datetime'] ?? '').toString();
+      final isCurrIn =
+          (log['status'] == 'IN') &&
+          keysCurrentlyIn.contains(key) &&
+          latestInDtByKey[key] == dt;
+      log['_isCurrentlyIn'] = isCurrIn;
     }
 
-    // Flag only the latest row as currently IN when its status is IN
-    final Set<int> isLatestInIndex = {};
-    latestIndexByKey.forEach((k, idx) {
-      if ((logsList[idx]['status'] ?? '') == 'IN') {
-        isLatestInIndex.add(idx);
-      }
-    });
-
-    for (int i = 0; i < logsList.length; i++) {
-      logsList[i]['_isCurrentlyIn'] = isLatestInIndex.contains(i);
-    }
-
-    // Sort by per-row flag first, then by datetime desc
+    // 5) Sort with currently-IN first, then by time desc
     logsList.sort((a, b) {
-      final ai = (a['_isCurrentlyIn'] ?? false) == true ? 1 : 0;
-      final bi = (b['_isCurrentlyIn'] ?? false) == true ? 1 : 0;
+      final ai = (a['_isCurrentlyIn'] ?? false) ? 1 : 0;
+      final bi = (b['_isCurrentlyIn'] ?? false) ? 1 : 0;
       if (ai != bi) return bi - ai; // true first
       final ad = DateTime.tryParse(a['datetime'] ?? '') ?? DateTime(1970);
       final bd = DateTime.tryParse(b['datetime'] ?? '') ?? DateTime(1970);
@@ -2918,7 +2927,7 @@ class _HistoryPageState extends State<HistoryPage> {
                             ),
                     ),
                   ] else ...[
-                    // Logs view (orange IN only on the latest current-IN row)
+                    // Logs view (orange IN only on the single latest IN row per diver)
                     Container(
                       padding: EdgeInsets.symmetric(
                         vertical: 8 * scale,
