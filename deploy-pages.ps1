@@ -14,8 +14,8 @@ $src      = Join-Path $root "build\web"
 $dst      = Join-Path $root "docs"
 $tmp      = Join-Path $root "docs_tmp"
 
-Info "Building Flutter Web (base-href $baseHref)"
-flutter build web --release --base-href $baseHref
+Info "Building Flutter Web (base-href $baseHref, renderer=html, no PWA SW)"
+flutter build web --release --base-href $baseHref --web-renderer html --pwa-strategy=none
 
 if (-not (Test-Path (Join-Path $src "index.html"))) {
   throw "Build output missing: $src\index.html. Aborting to avoid wiping docs."

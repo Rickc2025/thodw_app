@@ -24,8 +24,8 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      - name: Build Flutter Web (project site under /thodw_app/)
-        run: flutter build web --release --base-href "/thodw_app/"
+      - name: Build Flutter Web (project site under /thodw_app/) with HTML renderer, no PWA SW
+        run: flutter build web --release --base-href "/thodw_app/" --web-renderer html --pwa-strategy=none
 
       - name: Prepare docs folder
         run: |
