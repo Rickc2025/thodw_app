@@ -24,8 +24,11 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      - name: Build Flutter Web (project site under /thodw_app/) with HTML renderer, no PWA SW
-        run: flutter build web --release --base-href "/thodw_app/" --web-renderer html --pwa-strategy=none
+      - name: Build Flutter Web (prefer HTML renderer)
+        run: |
+          # Try modern flags first; fall back to dart-define for older Flutter
+          (flutter build web --release --base-href "/thodw_app/" --web-renderer html --pwa-strategy=none) || \
+          (flutter build web --release --base-href "/thodw_app/" --dart-define=FLUTTER_WEB_USE_SKIA=false)
 
       - name: Prepare docs folder
         run: |
@@ -33,6 +36,9 @@ jobs:
           mkdir -p docs
           cp -r build/web/* docs/
           touch docs/.nojekyll
+          # Disable service worker for older iPad/Safari compatibility
+          rm -f docs/flutter_service_worker.js || true
+          sed -i 's/serviceWorkerSettings:\s*{[^}]*}/serviceWorkerSettings: null/g' docs/flutter_bootstrap.js || true
 
       - name: Commit and push docs if changed
         env:

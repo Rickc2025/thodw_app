@@ -14,8 +14,9 @@ $src      = Join-Path $root "build\web"
 $dst      = Join-Path $root "docs"
 $tmp      = Join-Path $root "docs_tmp"
 
-Info "Building Flutter Web (base-href $baseHref, renderer=html, no PWA SW)"
-flutter build web --release --base-href $baseHref --web-renderer html --pwa-strategy=none
+Info "Building Flutter Web (base-href $baseHref, force HTML via dart-define)"
+flutter build web --release --base-href $baseHref --dart-define=FLUTTER_WEB_USE_SKIA=false
+if ($LASTEXITCODE -ne 0) { throw "Flutter build failed" }
 
 if (-not (Test-Path (Join-Path $src "index.html"))) {
   throw "Build output missing: $src\index.html. Aborting to avoid wiping docs."
@@ -37,6 +38,17 @@ Rename-Item $tmp $dst
 
 # Ensure .nojekyll exists at docs root
 New-Item -ItemType File -Path (Join-Path $dst ".nojekyll") -Force | Out-Null
+
+# Disable service worker for maximum Safari/iPad compatibility
+if (Test-Path (Join-Path $dst "flutter_service_worker.js")) {
+  Remove-Item (Join-Path $dst "flutter_service_worker.js") -Force
+}
+$bootstrap = (Join-Path $dst "flutter_bootstrap.js")
+if (Test-Path $bootstrap) {
+  $content = Get-Content -Raw $bootstrap
+  $content = $content -replace 'serviceWorkerSettings:\s*\{[\s\S]*?\}', 'serviceWorkerSettings: null'
+  Set-Content -Path $bootstrap -Value $content -NoNewline
+}
 
 # Sanity checks
 if (-not (Test-Path (Join-Path $dst "index.html"))) {
