@@ -60,78 +60,95 @@ class _HistoryPageState extends State<HistoryPage> {
     super.dispose();
   }
 
-  List<Map> _logsForTab(String filterTab) {
+  DateTime? _tryParseDT(dynamic s) {
+    if (s == null) return null;
+    try {
+      return DateTime.parse(s.toString());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // Build sessions: one row per dive with IN and (optional) OUT.
+  List<Map<String, dynamic>> _sessionsForTab(String filterTab) {
     final raw = logsBox.get('logsList', defaultValue: <Map>[]);
-    final List<Map> allNewestFirst = List<Map>.from(raw).reversed.toList();
+    // Work with chronological order (oldest -> newest) to pair correctly.
+    final List<Map> chronological = List<Map>.from(raw);
 
-    final Map<String, Map> latestEventByKey = {};
-    final Map<String, String> latestInDtByKey = {};
-    for (final log in allNewestFirst) {
-      final key = "${log['name']}|${log['tag']}";
-      latestEventByKey.putIfAbsent(key, () => log);
-      if ((log['status'] ?? '') == 'IN' && !latestInDtByKey.containsKey(key)) {
-        latestInDtByKey[key] = (log['datetime'] ?? '').toString();
-      }
-    }
-    final Set<String> keysCurrentlyIn = latestEventByKey.entries
-        .where((e) => (e.value['status'] ?? '') == 'IN')
-        .map((e) => e.key)
-        .toSet();
+    // Filter by aquacoulisse if needed (will match IN or OUT aquacoulisse).
+    bool filterByAq = filterTab != "ALL" && filterTab != "CHECKED-IN";
 
-    List<Map> logsList = List<Map>.from(allNewestFirst);
-    if (filterTab != "ALL" && filterTab != "CHECKED-IN") {
-      logsList = logsList
-          .where(
-            (log) =>
-                (log['aquacoulisse'] ?? '').toString().toUpperCase() ==
-                filterTab,
-          )
-          .toList();
-    }
+    // Build sessions per diver (ignore tag changes for pairing; store tag from IN).
+    final Map<String, List<Map<String, dynamic>>> openStacks = {};
+    final List<Map<String, dynamic>> sessions = [];
 
-    final Map<String, Map> lastIN = {};
-    for (int i = logsList.length - 1; i >= 0; i--) {
-      final log = logsList[i];
-      final key = "${log['name']}|${log['tag']}";
-      if (log['status'] == 'IN') {
-        lastIN[key] = log;
-      } else if (log['status'] == 'OUT') {
-        if (lastIN.containsKey(key)) {
-          try {
-            final inTime = DateTime.parse(lastIN[key]!['datetime']);
-            final outTime = DateTime.parse(log['datetime']);
-            if (outTime.isAfter(inTime)) {
-              log['diveDuration'] = _formatDuration(outTime.difference(inTime));
-              lastIN.remove(key);
-            }
-          } catch (_) {}
+    for (final log in chronological) {
+      final name = (log['name'] ?? '').toString();
+      if (name.isEmpty) continue;
+      final status = (log['status'] ?? '').toString().toUpperCase();
+      final dt = _tryParseDT(log['datetime']);
+      if (dt == null) continue;
+
+      if (status == 'IN') {
+        final session = <String, dynamic>{
+          'name': name,
+          'tag': (log['tag'] ?? '').toString(),
+          'datetimeIn': dt.toIso8601String(),
+          'datetimeOut': null,
+          'aquacoulisseIn': (log['aquacoulisse'] ?? '').toString(),
+          'aquacoulisseOut': null,
+          'diveDuration': '',
+        };
+        openStacks
+            .putIfAbsent(name, () => <Map<String, dynamic>>[])
+            .add(session);
+        sessions.add(session);
+      } else if (status == 'OUT') {
+        final stack = openStacks[name];
+        if (stack != null && stack.isNotEmpty) {
+          // Pair with the most recent unmatched IN.
+          final last = stack.removeLast();
+          last['datetimeOut'] = dt.toIso8601String();
+          last['aquacoulisseOut'] = (log['aquacoulisse'] ?? '').toString();
+          final inDt = _tryParseDT(last['datetimeIn']);
+          if (inDt != null && dt.isAfter(inDt)) {
+            last['diveDuration'] = _formatDuration(dt.difference(inDt));
+          }
+        } else {
+          // Orphan OUT without a prior IN; ignore for session building.
         }
       }
     }
 
-    for (final log in logsList) {
-      final key = "${log['name']}|${log['tag']}";
-      final dt = (log['datetime'] ?? '').toString();
-      final isCurrIn =
-          (log['status'] == 'IN') &&
-          keysCurrentlyIn.contains(key) &&
-          latestInDtByKey[key] == dt;
-      log['_isCurrentlyIn'] = isCurrIn;
+    // Mark sessions that are currently in (no OUT and diver is in water).
+    for (final s in sessions) {
+      final bool currentlyIn = s['datetimeOut'] == null;
+      s['_isCurrentlyIn'] = currentlyIn;
     }
 
-    logsList.sort((a, b) {
+    // Apply aquacoulisse filter (match either IN or OUT aquacoulisse).
+    final filtered = filterByAq
+        ? sessions.where((s) {
+            final inAq = (s['aquacoulisseIn'] ?? '').toString().toUpperCase();
+            final outAq = (s['aquacoulisseOut'] ?? '').toString().toUpperCase();
+            return inAq == filterTab || outAq == filterTab;
+          }).toList()
+        : sessions;
+
+    // Sort: currently in first, then by In datetime desc.
+    filtered.sort((a, b) {
       final ai = (a['_isCurrentlyIn'] ?? false) ? 1 : 0;
       final bi = (b['_isCurrentlyIn'] ?? false) ? 1 : 0;
       if (ai != bi) return bi - ai;
-      final ad = DateTime.tryParse(a['datetime'] ?? '') ?? DateTime(1970);
-      final bd = DateTime.tryParse(b['datetime'] ?? '') ?? DateTime(1970);
+      final ad = _tryParseDT(a['datetimeIn']) ?? DateTime(1970);
+      final bd = _tryParseDT(b['datetimeIn']) ?? DateTime(1970);
       return bd.compareTo(ad);
     });
 
-    return logsList;
+    return filtered;
   }
 
-  List<Map> getLogsFiltered() => _logsForTab(tab);
+  List<Map> getLogsFiltered() => _sessionsForTab(tab);
 
   List<Map<String, dynamic>> getCheckedInList() {
     final box = checkinsBox;
@@ -236,19 +253,21 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 
   Future<void> _exportCSV() async {
-    final logs = getLogsFiltered();
+    final sessions = getLogsFiltered();
     final buffer = StringBuffer();
     buffer.writeln(
-      "Name,Status,Tag,Datetime,Aquacoulisse,DiveDuration (if OUT)",
+      "Name,Status,Tag,DateTime In,DateTime Out,Aquacoulisse In,Aquacoulisse Out,DiveDuration",
     );
-    for (final log in logs) {
-      final name = _csvSafe(log['name']);
-      final status = _csvSafe(log['status']);
-      final tag = _csvSafe(log['tag']?.toString());
-      final dt = _csvSafe(log['datetime']);
-      final aq = _csvSafe(log['aquacoulisse']);
-      final dd = _csvSafe(log['diveDuration']);
-      buffer.writeln('$name,$status,$tag,$dt,$aq,$dd');
+    for (final s in sessions) {
+      final name = _csvSafe(s['name']);
+      final status = _csvSafe((s['datetimeOut'] == null) ? 'IN' : 'OUT');
+      final tag = _csvSafe(s['tag']?.toString());
+      final dtIn = _csvSafe(s['datetimeIn']);
+      final dtOut = _csvSafe(s['datetimeOut']);
+      final aqIn = _csvSafe(s['aquacoulisseIn']);
+      final aqOut = _csvSafe(s['aquacoulisseOut']);
+      final dd = _csvSafe(s['diveDuration']);
+      buffer.writeln('$name,$status,$tag,$dtIn,$dtOut,$aqIn,$aqOut,$dd');
     }
     await Exporter.saveCsv(_timestampBase(), buffer.toString());
   }
@@ -298,16 +317,18 @@ class _HistoryPageState extends State<HistoryPage> {
     }
 
     void addLogsSheet(String sheetName, String filterTab) {
-      final logs = _logsForTab(filterTab);
+      final sessions = _sessionsForTab(filterTab);
       sb.writeln('<Worksheet ss:Name="${_xmlEscape(sheetName)}"><Table>');
 
       final headers = [
         "Name",
         "Status",
         "Tag",
-        "Datetime",
-        "Aquacoulisse",
-        "DiveDuration (if OUT)",
+        "DateTime In",
+        "DateTime Out",
+        "Aquacoulisse In",
+        "Aquacoulisse Out",
+        "DiveDuration",
       ];
       sb.write('<Row>');
       for (final h in headers) {
@@ -315,14 +336,17 @@ class _HistoryPageState extends State<HistoryPage> {
       }
       sb.writeln('</Row>');
 
-      for (final log in logs) {
+      for (final s in sessions) {
+        final status = (s['datetimeOut'] == null) ? 'IN' : 'OUT';
         final row = [
-          (log['name'] ?? '').toString(),
-          (log['status'] ?? '').toString(),
-          (log['tag'] ?? '').toString(),
-          (log['datetime'] ?? '').toString(),
-          (log['aquacoulisse'] ?? '').toString(),
-          (log['diveDuration'] ?? '').toString(),
+          (s['name'] ?? '').toString(),
+          status,
+          (s['tag'] ?? '').toString(),
+          (s['datetimeIn'] ?? '').toString(),
+          (s['datetimeOut'] ?? '').toString(),
+          (s['aquacoulisseIn'] ?? '').toString(),
+          (s['aquacoulisseOut'] ?? '').toString(),
+          (s['diveDuration'] ?? '').toString(),
         ];
         sb.write('<Row>');
         for (final cell in row) {
@@ -636,7 +660,17 @@ class _HistoryPageState extends State<HistoryPage> {
                           Expanded(
                             flex: 2,
                             child: Text(
-                              "Date and Time:",
+                              "Date and Time In:",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14 * scale,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            flex: 2,
+                            child: Text(
+                              "Date and Time Out:",
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14 * scale,
@@ -653,9 +687,17 @@ class _HistoryPageState extends State<HistoryPage> {
                             ),
                           ),
                           Expanded(
-                            flex: 2,
                             child: Text(
-                              "Aquacoulisse:",
+                              "Aquacoulisse In:",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14 * scale,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              "Aquacoulisse Out:",
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14 * scale,
@@ -682,32 +724,48 @@ class _HistoryPageState extends State<HistoryPage> {
                               separatorBuilder: (_, __) =>
                                   const Divider(height: 1),
                               itemBuilder: (_, idx) {
-                                final log = logs[idx];
-                                DateTime? dt;
+                                final s = logs[idx];
+                                DateTime? dtIn;
+                                DateTime? dtOut;
                                 try {
-                                  dt = DateTime.parse(log['datetime'] ?? "");
+                                  dtIn = DateTime.parse(s['datetimeIn'] ?? "");
                                 } catch (_) {}
-                                final dateStr = dt == null
-                                    ? ""
-                                    : "${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} "
-                                          "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
-                                final status = (log['status'] ?? '').toString();
+                                try {
+                                  dtOut = s['datetimeOut'] == null
+                                      ? null
+                                      : DateTime.parse(s['datetimeOut']);
+                                } catch (_) {}
+                                String dateStrIn = '';
+                                String dateStrOut = '';
+                                if (dtIn != null) {
+                                  dateStrIn =
+                                      "${dtIn.year}-${dtIn.month.toString().padLeft(2, '0')}-${dtIn.day.toString().padLeft(2, '0')} "
+                                      "${dtIn.hour.toString().padLeft(2, '0')}:${dtIn.minute.toString().padLeft(2, '0')}";
+                                }
+                                if (dtOut != null) {
+                                  dateStrOut =
+                                      "${dtOut.year}-${dtOut.month.toString().padLeft(2, '0')}-${dtOut.day.toString().padLeft(2, '0')} "
+                                      "${dtOut.hour.toString().padLeft(2, '0')}:${dtOut.minute.toString().padLeft(2, '0')}";
+                                }
                                 final bool isCurrIn =
-                                    (log['_isCurrentlyIn'] ?? false) == true;
-                                final statusStyle = TextStyle(
+                                    (s['_isCurrentlyIn'] ?? false) == true;
+                                final inStyle = TextStyle(
                                   fontSize: (isPhone ? 14 : 17) * scale,
-                                  color: status == 'IN' && isCurrIn
+                                  color: isCurrIn
                                       ? Colors.orange[800]
                                       : Colors.black,
-                                  fontWeight: status == 'IN' && isCurrIn
-                                      ? FontWeight.w700
-                                      : null,
+                                  fontWeight: isCurrIn ? FontWeight.w700 : null,
                                 );
-                                final diveDur =
-                                    (status == 'OUT' &&
-                                        log['diveDuration'] != null)
-                                    ? log['diveDuration']
-                                    : "";
+                                final statusText = isCurrIn ? 'IN' : 'OUT';
+                                final statusStyle = TextStyle(
+                                  fontSize: (isPhone ? 14 : 17) * scale,
+                                  color: isCurrIn
+                                      ? Colors.orange[800]
+                                      : Colors.black,
+                                  fontWeight: isCurrIn ? FontWeight.w700 : null,
+                                );
+                                final diveDur = (s['diveDuration'] ?? '')
+                                    .toString();
                                 return Container(
                                   padding: EdgeInsets.symmetric(
                                     vertical: 8 * scale,
@@ -718,7 +776,7 @@ class _HistoryPageState extends State<HistoryPage> {
                                       Expanded(
                                         flex: 2,
                                         child: Text(
-                                          log['name'] ?? "",
+                                          s['name'] ?? "",
                                           style: TextStyle(
                                             fontSize:
                                                 (isPhone ? 14 : 17) * scale,
@@ -726,11 +784,14 @@ class _HistoryPageState extends State<HistoryPage> {
                                         ),
                                       ),
                                       Expanded(
-                                        child: Text(status, style: statusStyle),
+                                        child: Text(
+                                          statusText,
+                                          style: statusStyle,
+                                        ),
                                       ),
                                       Expanded(
                                         child: Text(
-                                          (log['tag'] ?? '').toString(),
+                                          (s['tag'] ?? '').toString(),
                                           style: TextStyle(
                                             fontSize:
                                                 (isPhone ? 14 : 17) * scale,
@@ -739,8 +800,12 @@ class _HistoryPageState extends State<HistoryPage> {
                                       ),
                                       Expanded(
                                         flex: 2,
+                                        child: Text(dateStrIn, style: inStyle),
+                                      ),
+                                      Expanded(
+                                        flex: 2,
                                         child: Text(
-                                          dateStr,
+                                          dateStrOut,
                                           style: TextStyle(
                                             fontSize:
                                                 (isPhone ? 14 : 17) * scale,
@@ -757,9 +822,19 @@ class _HistoryPageState extends State<HistoryPage> {
                                         ),
                                       ),
                                       Expanded(
-                                        flex: 2,
                                         child: Text(
-                                          (log['aquacoulisse'] ?? '')
+                                          (s['aquacoulisseIn'] ?? '')
+                                              .toString()
+                                              .toUpperCase(),
+                                          style: TextStyle(
+                                            fontSize:
+                                                (isPhone ? 14 : 17) * scale,
+                                          ),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        child: Text(
+                                          (s['aquacoulisseOut'] ?? '')
                                               .toString()
                                               .toUpperCase(),
                                           style: TextStyle(
