@@ -46,9 +46,9 @@ class _HistoryPageState extends State<HistoryPage> {
     logsBox = Hive.box('logs');
     checkinsBox = Hive.box('checkins');
     diversBox = Hive.box('divers');
-  final initial = widget.selectedColor.toUpperCase();
-  // Keep support for internal "ALL" selection even if it's not a visible tab.
-  tab = (tabs.contains(initial) || initial == "ALL") ? initial : "ALL";
+    final initial = widget.selectedColor.toUpperCase();
+    // Keep support for internal "ALL" selection even if it's not a visible tab.
+    tab = (tabs.contains(initial) || initial == "ALL") ? initial : "ALL";
     _updateCounts();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _updateCounts());
     _logsSub = logsBox.watch().listen((_) {
@@ -84,8 +84,10 @@ class _HistoryPageState extends State<HistoryPage> {
     final List<Map> chronological = List<Map>.from(raw);
 
     // Filter by aquacoulisse if needed (will match IN or OUT aquacoulisse).
-  bool filterByAq =
-    filterTab != "ALL" && filterTab != "CHECKED-IN" && filterTab != "IN WATER";
+    bool filterByAq =
+        filterTab != "ALL" &&
+        filterTab != "CHECKED-IN" &&
+        filterTab != "IN WATER";
 
     // Build sessions per diver (ignore tag changes for pairing; store tag from IN).
     final Map<String, List<Map<String, dynamic>>> openStacks = {};
