@@ -85,19 +85,25 @@ class _HomeScreenState extends State<HomeScreen> {
           Positioned(
             left: 12 * scale,
             bottom: 12 * scale,
-            child: Builder(
-              builder: (_) {
-                final pretty = BuildInfo.prettyUpdatedLocal();
-                if (pretty.isEmpty) return const SizedBox.shrink();
-                return Text(
-                  'Updated: ' + pretty,
+            child: Builder(builder: (_) {
+              final pretty = BuildInfo.prettyUpdatedLocal();
+              final sha = BuildInfo.shortSha;
+              final text = sha.isNotEmpty ? 'Updated: $pretty · $sha' : 'Updated: $pretty';
+              return Container(
+                padding: EdgeInsets.symmetric(horizontal: 6 * scale, vertical: 2 * scale),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.5),
+                  borderRadius: BorderRadius.circular(6 * scale),
+                ),
+                child: Text(
+                  text,
                   style: TextStyle(
                     fontSize: 12 * scale,
-                    color: Colors.black.withOpacity(0.55),
+                    color: Colors.black.withOpacity(0.6),
                   ),
-                );
-              },
-            ),
+                ),
+              );
+            }),
           ),
           Positioned(
             top: topPad + 6 * scale,
