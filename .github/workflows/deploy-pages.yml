@@ -3,6 +3,8 @@ name: Deploy Flutter Web to GitHub Pages (docs)
 on:
   push:
     branches: [ main ]
+    paths-ignore:
+      - 'docs/**' # avoid CI loop when CI commits built files into docs
   workflow_dispatch:
 
 permissions:
@@ -10,10 +12,14 @@ permissions:
 
 jobs:
   build-and-deploy:
+    # Don't run again for the bot's own commit that updates docs
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # required to push back to main
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
