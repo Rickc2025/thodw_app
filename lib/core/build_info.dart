@@ -16,9 +16,9 @@ class BuildInfo {
   static String get shortSha => gitSha.isNotEmpty ? gitSha.substring(0, 7) : '';
 
   /// Returns a friendly local time like "2025-06-11 12:22AM".
-  /// Fallbacks: if parsing fails, return the raw BUILD_TIME; if missing, return "dev build".
+  /// If BUILD_TIME is missing or invalid, returns empty string.
   static String prettyUpdatedLocal() {
-    if (buildTime.isEmpty) return 'dev build';
+    if (buildTime.isEmpty) return '';
     try {
       final dt = DateTime.parse(buildTime).toLocal();
       final y = dt.year.toString().padLeft(4, '0');
@@ -33,7 +33,7 @@ class BuildInfo {
       final hh = hour.toString();
       return '$y-$mo-$d $hh:$min$suffix';
     } catch (_) {
-      return buildTime; // show raw value if parse fails
+      return '';
     }
   }
 }
