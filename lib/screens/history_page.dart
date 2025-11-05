@@ -10,7 +10,13 @@ import 'change_tag_screen.dart';
 
 class HistoryPage extends StatefulWidget {
   final String selectedColor;
-  const HistoryPage({super.key, required this.selectedColor});
+  // When false, hide tabs and show full history (ALL) view.
+  final bool showTabs;
+  const HistoryPage({
+    super.key,
+    required this.selectedColor,
+    this.showTabs = true,
+  });
 
   @override
   State<HistoryPage> createState() => _HistoryPageState();
@@ -20,14 +26,15 @@ class _HistoryPageState extends State<HistoryPage> {
   late Box logsBox;
   late Box checkinsBox;
   late Box diversBox;
-  late String tab; // "CHECKED-IN" or color or "ALL"
-  final List<String> tabs = [
+  late String tab; // "CHECKED-IN" or color or "ALL" or "IN WATER"
+  // Visible tabs (no ALL); IN WATER replaces old ALL quick filter.
+  final List<String> tabs = const [
     "CHECKED-IN",
     "BLUE",
     "GREEN",
     "RED",
     "WHITE",
-    "ALL",
+    "IN WATER",
   ];
   int currentlyIn = 0;
   Timer? _timer;
@@ -39,8 +46,9 @@ class _HistoryPageState extends State<HistoryPage> {
     logsBox = Hive.box('logs');
     checkinsBox = Hive.box('checkins');
     diversBox = Hive.box('divers');
-    final initial = widget.selectedColor.toUpperCase();
-    tab = tabs.contains(initial) ? initial : "ALL";
+  final initial = widget.selectedColor.toUpperCase();
+  // Keep support for internal "ALL" selection even if it's not a visible tab.
+  tab = (tabs.contains(initial) || initial == "ALL") ? initial : "ALL";
     _updateCounts();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _updateCounts());
     _logsSub = logsBox.watch().listen((_) {
@@ -76,7 +84,8 @@ class _HistoryPageState extends State<HistoryPage> {
     final List<Map> chronological = List<Map>.from(raw);
 
     // Filter by aquacoulisse if needed (will match IN or OUT aquacoulisse).
-    bool filterByAq = filterTab != "ALL" && filterTab != "CHECKED-IN";
+  bool filterByAq =
+    filterTab != "ALL" && filterTab != "CHECKED-IN" && filterTab != "IN WATER";
 
     // Build sessions per diver (ignore tag changes for pairing; store tag from IN).
     final Map<String, List<Map<String, dynamic>>> openStacks = {};
@@ -127,13 +136,18 @@ class _HistoryPageState extends State<HistoryPage> {
     }
 
     // Apply aquacoulisse filter (match either IN or OUT aquacoulisse).
-    final filtered = filterByAq
+    List<Map<String, dynamic>> filtered = filterByAq
         ? sessions.where((s) {
             final inAq = (s['aquacoulisseIn'] ?? '').toString().toUpperCase();
             final outAq = (s['aquacoulisseOut'] ?? '').toString().toUpperCase();
             return inAq == filterTab || outAq == filterTab;
           }).toList()
         : sessions;
+
+    // IN WATER filter: only sessions with no OUT yet
+    if (filterTab == "IN WATER") {
+      filtered = filtered.where((s) => (s['datetimeOut'] == null)).toList();
+    }
 
     // Sort: currently in first, then by In datetime desc.
     filtered.sort((a, b) {
@@ -417,7 +431,9 @@ class _HistoryPageState extends State<HistoryPage> {
         children: [
           TopAlert(
             currentlyIn: currentlyIn,
-            onTap: () => setState(() => tab = "ALL"),
+            onTap: widget.showTabs
+                ? () => setState(() => tab = "IN WATER")
+                : null,
           ),
           SafeArea(
             child: Padding(
@@ -478,7 +494,8 @@ class _HistoryPageState extends State<HistoryPage> {
                     ],
                   ),
                   SizedBox(height: 10 * scale),
-                  Row(children: [for (final t in tabs) _tabButton(t)]),
+                  if (widget.showTabs)
+                    Row(children: [for (final t in tabs) _tabButton(t)]),
                   SizedBox(height: 12 * scale),
                   if (tab == "CHECKED-IN") ...[
                     Container(

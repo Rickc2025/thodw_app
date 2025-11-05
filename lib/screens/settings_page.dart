@@ -232,10 +232,11 @@ class _SettingsPageState extends State<SettingsPage> {
           TopAlert(
             currentlyIn: currentlyIn,
             onTap: () {
+              // Quick jump to live IN WATER view in Log
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => const HistoryPage(selectedColor: "ALL"),
+                  builder: (_) => const HistoryPage(selectedColor: "IN WATER"),
                 ),
               );
             },
@@ -293,11 +294,51 @@ class _SettingsPageState extends State<SettingsPage> {
                       'New Day Reset (Checked‑In only)',
                       style: TextStyle(fontSize: 18 * scale),
                     ),
-                    onPressed: _resetCheckIns,
+                    onPressed: currentlyIn > 0 ? null : _resetCheckIns,
                     style: ElevatedButton.styleFrom(
                       minimumSize: Size.fromHeight(48 * scale),
                       backgroundColor: Colors.red[600],
                       foregroundColor: Colors.white,
+                    ),
+                  ),
+                ),
+                if (currentlyIn > 0)
+                  Padding(
+                    padding: EdgeInsets.only(top: 6 * scale),
+                    child: Text(
+                      'Reset is blocked while any diver is IN.',
+                      style: TextStyle(
+                        color: Colors.red[700],
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                SizedBox(height: 12 * scale),
+                // History of Dives (full, no tabs)
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24 * scale),
+                  child: ElevatedButton.icon(
+                    icon: Icon(Icons.history, size: 22 * scale),
+                    label: Text(
+                      'History of Dives',
+                      style: TextStyle(fontSize: 18 * scale),
+                    ),
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const HistoryPage(
+                          selectedColor: 'ALL',
+                          showTabs: false,
+                        ),
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: Size.fromHeight(48 * scale),
+                      backgroundColor: Colors.grey[200],
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16 * scale),
+                      ),
                     ),
                   ),
                 ),
