@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../core/constants.dart';
 import '../core/utils.dart';
+import '../core/build_info.dart';
 import '../services/data_service.dart';
 import '../widgets/top_alert.dart';
 import 'aquacoulisse_screen.dart';
@@ -80,6 +81,24 @@ class _HomeScreenState extends State<HomeScreen> {
       body: Stack(
         children: [
           TopAlert(currentlyIn: currentlyIn, onTap: _openLog),
+          // Bottom-left build timestamp indicator to verify deployed version
+          Positioned(
+            left: 12 * scale,
+            bottom: 12 * scale,
+            child: Builder(
+              builder: (_) {
+                final pretty = BuildInfo.prettyUpdatedLocal();
+                if (pretty.isEmpty) return const SizedBox.shrink();
+                return Text(
+                  'Updated: ' + pretty,
+                  style: TextStyle(
+                    fontSize: 12 * scale,
+                    color: Colors.black.withOpacity(0.55),
+                  ),
+                );
+              },
+            ),
+          ),
           Positioned(
             top: topPad + 6 * scale,
             right: 12 * scale,
