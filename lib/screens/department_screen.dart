@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../core/constants.dart';
+import 'package:hive/hive.dart';
 import '../core/utils.dart';
 import '../core/navigation.dart';
 import '../services/data_service.dart';
@@ -68,6 +69,18 @@ class _DepartmentScreenState extends State<DepartmentScreen> {
   Widget build(BuildContext context) {
     final topPad = MediaQuery.of(context).padding.top;
     const modeTitle = "Check In";
+    // Only list departments that actually have at least one diver configured.
+    final stored = Hive.box('divers').get('diversList', defaultValue: <Map>[]);
+    final diverList = List<Map>.from(stored);
+    final Set<String> depsWithDivers = {
+      for (final d in diverList)
+        if (((d['name'] ?? '').toString().isNotEmpty) && (d['department'] ?? '') != '')
+          (d['department'] ?? '').toString()
+    };
+    final filteredDepartments = [
+      for (final dep in departments)
+        if (depsWithDivers.contains(dep)) dep,
+    ];
     return Scaffold(
       body: Stack(
         children: [
@@ -138,7 +151,21 @@ class _DepartmentScreenState extends State<DepartmentScreen> {
                     runSpacing: sf(context, 24),
                     alignment: WrapAlignment.center,
                     children: [
-                      for (final dep in departments)
+                      if (filteredDepartments.isEmpty)
+                        Padding(
+                          padding: EdgeInsets.all(sf(context, 12)),
+                          child: Text(
+                            'No departments available yet.\nAdd divers first in Settings.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: sf(context, 22),
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        )
+                      else
+                        for (final dep in filteredDepartments)
                         ElevatedButton(
                           onPressed: () => _openNext(dep),
                           style: ElevatedButton.styleFrom(
