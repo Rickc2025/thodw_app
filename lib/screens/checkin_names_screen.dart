@@ -33,6 +33,8 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
 
   bool get isShowDivers => widget.department == "SHOW DIVERS";
   bool get isOtherAggregated => widget.department == "OTHER";
+  // For the aggregated OTHER entry we allow drilling down into a specific department.
+  String? selectedSubDepartment;
 
   @override
   void initState() {
@@ -48,21 +50,14 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
     final stored = diversBox.get('diversList', defaultValue: <Map>[]);
     final list = List<Map>.from(stored);
     if (isOtherAggregated) {
-      const otherGroup = {
-        "AUTOMATION",
-        "H&F",
-        "SFX",
-        "LX",
-        "SOUND",
-        "WARDROBE",
-        "STAGE MANAGEMENT",
-        "HEALTH & SAFETY",
-        "MANAGEMENT",
-        "ARTISTIC",
-        "VIP GUESTS",
-        "OTHER",
-      };
-      divers = list.where((d) => otherGroup.contains(d['department'])).toList();
+      // Only load divers after a sub-department is chosen.
+      if (selectedSubDepartment != null) {
+        divers = list
+            .where((d) => d['department'] == selectedSubDepartment)
+            .toList();
+      } else {
+        divers = [];
+      }
     } else {
       divers = list.where((d) => d['department'] == widget.department).toList();
     }
@@ -198,7 +193,9 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
                   SizedBox(height: 4 * scale),
                   Text(
                     isOtherAggregated
-                        ? "OTHER DEPARTMENTS - CHECK IN"
+                        ? (selectedSubDepartment == null
+                            ? "OTHER DEPARTMENTS - SELECT DEPARTMENT"
+                            : "${selectedSubDepartment} - CHECK IN")
                         : "${widget.department} - CHECK IN",
                     style: TextStyle(
                       fontSize: (isPhone ? 28 : 36) * scale,
@@ -209,6 +206,7 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
                   ),
                   SizedBox(height: 10 * scale),
 
+                  // Team buttons only for SHOW DIVERS
                   if (isShowDivers)
                     Wrap(
                       spacing: 6 * scale,
@@ -248,6 +246,67 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
 
                   if (isShowDivers) SizedBox(height: 8 * scale),
 
+                  // Sub-department selection for OTHER aggregate
+                  if (isOtherAggregated && selectedSubDepartment == null)
+                    Padding(
+                      padding: EdgeInsets.only(bottom: 8 * scale),
+                      child: Wrap(
+                        spacing: 10 * scale,
+                        runSpacing: 10 * scale,
+                        children: [
+                          for (final dep in const [
+                            "AUTOMATION",
+                            "H&F",
+                            "SFX",
+                            "LX",
+                            "SOUND",
+                            "WARDROBE",
+                            "STAGE MANAGEMENT",
+                            "HEALTH & SAFETY",
+                            "MANAGEMENT",
+                            "ARTISTIC",
+                            "VIP GUESTS",
+                            "OTHER",
+                          ])
+                            Builder(builder: (_) {
+                              final stored = Hive.box('divers')
+                                  .get('diversList', defaultValue: <Map>[]);
+                              final list = List<Map>.from(stored);
+                              final hasAny = list.any(
+                                (d) => (d['department'] ?? '') == dep,
+                              );
+                              if (!hasAny) return const SizedBox.shrink();
+                              return ElevatedButton(
+                                onPressed: () {
+                                  setState(() {
+                                    selectedSubDepartment = dep;
+                                    selectedDiver = null;
+                                    selectedTag = null;
+                                    tagPage = 0;
+                                    _loadDivers();
+                                  });
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blueGrey[700],
+                                  foregroundColor: Colors.white,
+                                  minimumSize: Size(160 * scale, 54 * scale),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius:
+                                        BorderRadius.circular(30 * scale),
+                                  ),
+                                  textStyle: TextStyle(
+                                    fontSize: 16 * scale,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                  elevation: 0,
+                                ),
+                                child: Text(dep),
+                              );
+                            })
+                        ],
+                      ),
+                    ),
+
                   Expanded(
                     child: Row(
                       children: [
@@ -255,7 +314,21 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
                           flex: 2,
                           child: Column(
                             children: [
-                              if (selectedDiver == null)
+                              // Department chooser panel for OTHER (no names yet)
+                              if (isOtherAggregated && selectedSubDepartment == null)
+                                Expanded(
+                                  child: Center(
+                                    child: Text(
+                                      "Select a department above.",
+                                      style: TextStyle(
+                                        fontSize:
+                                            (isPhone ? 18 : 22) * scale,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ),
+                                )
+                              else if (selectedDiver == null)
                                 Expanded(
                                   child: displayedDivers.isEmpty
                                       ? Center(
@@ -513,7 +586,10 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
                                   child: ElevatedButton(
                                     onPressed:
                                         (selectedDiver != null &&
-                                            selectedTag != null)
+                                                selectedTag != null &&
+                                                (!isOtherAggregated ||
+                                                    selectedSubDepartment !=
+                                                        null))
                                         ? _confirm
                                         : null,
                                     style: ElevatedButton.styleFrom(
