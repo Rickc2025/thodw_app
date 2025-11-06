@@ -74,13 +74,29 @@ class _DepartmentScreenState extends State<DepartmentScreen> {
     final diverList = List<Map>.from(stored);
     final Set<String> depsWithDivers = {
       for (final d in diverList)
-        if (((d['name'] ?? '').toString().isNotEmpty) && (d['department'] ?? '') != '')
-          (d['department'] ?? '').toString()
+        if (((d['name'] ?? '').toString().isNotEmpty) &&
+            (d['department'] ?? '') != '')
+          (d['department'] ?? '').toString(),
     };
-    final filteredDepartments = [
-      for (final dep in departments)
-        if (depsWithDivers.contains(dep)) dep,
-    ];
+    // Group 'OTHER' departments into a single button on this screen
+    const otherGroup = {
+      "AUTOMATION",
+      "H&F",
+      "SFX",
+      "LX",
+      "SOUND",
+      "WARDROBE",
+      "STAGE MANAGEMENT",
+      "HEALTH & SAFETY",
+      "MANAGEMENT",
+      "ARTISTIC",
+      "VIP GUESTS",
+      "OTHER",
+    };
+
+    final bool hasShowDivers = depsWithDivers.contains("SHOW DIVERS");
+    final bool hasDayCrew = depsWithDivers.contains("DAY CREW");
+    final bool hasOther = depsWithDivers.any((d) => otherGroup.contains(d));
     return Scaffold(
       body: Stack(
         children: [
@@ -151,7 +167,7 @@ class _DepartmentScreenState extends State<DepartmentScreen> {
                     runSpacing: sf(context, 24),
                     alignment: WrapAlignment.center,
                     children: [
-                      if (filteredDepartments.isEmpty)
+                      if (!hasShowDivers && !hasDayCrew && !hasOther)
                         Padding(
                           padding: EdgeInsets.all(sf(context, 12)),
                           child: Text(
@@ -164,30 +180,77 @@ class _DepartmentScreenState extends State<DepartmentScreen> {
                             ),
                           ),
                         )
-                      else
-                        for (final dep in filteredDepartments)
-                        ElevatedButton(
-                          onPressed: () => _openNext(dep),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
-                            foregroundColor: Colors.white,
-                            minimumSize: Size(
-                              sf(context, 260),
-                              sf(context, 70),
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(
-                                sf(context, 40),
+                      else ...[
+                        if (hasShowDivers)
+                          ElevatedButton(
+                            onPressed: () => _openNext("SHOW DIVERS"),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue,
+                              foregroundColor: Colors.white,
+                              minimumSize: Size(
+                                sf(context, 260),
+                                sf(context, 70),
                               ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  sf(context, 40),
+                                ),
+                              ),
+                              textStyle: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: sf(context, 22),
+                              ),
+                              elevation: 0,
                             ),
-                            textStyle: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: sf(context, 22),
-                            ),
-                            elevation: 0,
-                          ),
-                          child: Text(dep),
+                          child: const Text("SHOW DIVERS"),
                         ),
+                        if (hasDayCrew)
+                          ElevatedButton(
+                            onPressed: () => _openNext("DAY CREW"),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue,
+                              foregroundColor: Colors.white,
+                              minimumSize: Size(
+                                sf(context, 260),
+                                sf(context, 70),
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  sf(context, 40),
+                                ),
+                              ),
+                              textStyle: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: sf(context, 22),
+                              ),
+                              elevation: 0,
+                            ),
+                            child: const Text("DAY CREW"),
+                          ),
+                        if (hasOther)
+                          ElevatedButton(
+                            onPressed: () => _openNext("OTHER"),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue,
+                              foregroundColor: Colors.white,
+                              minimumSize: Size(
+                                sf(context, 260),
+                                sf(context, 70),
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(
+                                  sf(context, 40),
+                                ),
+                              ),
+                              textStyle: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: sf(context, 22),
+                              ),
+                              elevation: 0,
+                            ),
+                            child: const Text("OTHER"),
+                          ),
+                      ],
                     ],
                   ),
                   SizedBox(height: sf(context, 60)),

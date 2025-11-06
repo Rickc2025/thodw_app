@@ -32,6 +32,7 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
   static const int tagsPerPage = 20;
 
   bool get isShowDivers => widget.department == "SHOW DIVERS";
+  bool get isOtherAggregated => widget.department == "OTHER";
 
   @override
   void initState() {
@@ -46,7 +47,25 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
   void _loadDivers() {
     final stored = diversBox.get('diversList', defaultValue: <Map>[]);
     final list = List<Map>.from(stored);
-    divers = list.where((d) => d['department'] == widget.department).toList();
+    if (isOtherAggregated) {
+      const otherGroup = {
+        "AUTOMATION",
+        "H&F",
+        "SFX",
+        "LX",
+        "SOUND",
+        "WARDROBE",
+        "STAGE MANAGEMENT",
+        "HEALTH & SAFETY",
+        "MANAGEMENT",
+        "ARTISTIC",
+        "VIP GUESTS",
+        "OTHER",
+      };
+      divers = list.where((d) => otherGroup.contains(d['department'])).toList();
+    } else {
+      divers = list.where((d) => d['department'] == widget.department).toList();
+    }
     setState(() {});
   }
 
@@ -65,7 +84,7 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
     if (isShowDivers) {
       return divers.where((d) => d['team'] == selectedTeam).toList();
     }
-    return divers;
+  return divers;
   }
 
   List<int> get currentTagPage {
@@ -178,7 +197,9 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
                   ),
                   SizedBox(height: 4 * scale),
                   Text(
-                    "${widget.department} - CHECK IN",
+                    isOtherAggregated
+                        ? "OTHER DEPARTMENTS - CHECK IN"
+                        : "${widget.department} - CHECK IN",
                     style: TextStyle(
                       fontSize: (isPhone ? 28 : 36) * scale,
                       fontWeight: FontWeight.bold,
