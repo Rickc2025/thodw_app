@@ -181,9 +181,9 @@ class _OperatorScreenState extends State<OperatorScreen> {
     if (!allSelectedAreOut) return;
     final logs = logsBox.get('logsList', defaultValue: <Map>[]);
     for (final name in selectedDivers) {
-      final tag = checkedInTag(name);
+      final tag = checkedInTank(name);
       if (tag == null) {
-        _snack("No tag for $name. Assign a tag from Log → Checked‑In.");
+        _snack("No tank for $name. Assign a tank from Log → Checked‑In.");
         continue;
       }
       logs.add({
@@ -206,7 +206,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
     if (!allSelectedAreIn) return;
     final logs = logsBox.get('logsList', defaultValue: <Map>[]);
     for (final name in selectedDivers) {
-      final lt = lastInTag(name);
+      final lt = lastInTank(name);
       logs.add({
         'name': name,
         'status': 'OUT',
@@ -287,7 +287,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                     final Color bg = isSel
                         ? Colors.green
                         : aquacoulisseColor(widget.aquacoulisse);
-                    final int? tag = checkedInTag(name);
+                    final int? tag = checkedInTank(name);
                     return Stack(
                       children: [
                         ElevatedButton(
@@ -310,7 +310,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                             child: Text(
                               tag == null
                                   ? name
-                                  : "$name  (Tag ${tag.toString().padLeft(2, '0')})",
+                                  : "$name  (Tank ${tag.toString().padLeft(2, '0')})",
                             ),
                           ),
                         ),
@@ -373,7 +373,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                   builder: (_) {
                     final waterIn = diverIsInWater(name);
                     final bool isSel = selectedDivers.contains(name);
-                    final int? tag = checkedInTag(name);
+                    final int? tag = checkedInTank(name);
                     final Color bg = isSel
                         ? Colors.green
                         : Colors.blueGrey; // neutral
@@ -399,7 +399,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                             child: Text(
                               tag == null
                                   ? name
-                                  : "$name  (Tag ${tag.toString().padLeft(2, '0')})",
+                                  : "$name  (Tank ${tag.toString().padLeft(2, '0')})",
                             ),
                           ),
                         ),
@@ -638,7 +638,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                                                   ),
                                                 ),
                                                 subtitle: Text(
-                                                  "Tag ${checkedInTag(name)?.toString().padLeft(2, '0') ?? '--'} • ${diverIsInWater(name) ? 'IN' : 'OUT'}",
+                                                  "Tank ${checkedInTank(name)?.toString().padLeft(2, '0') ?? '--'} • ${diverIsInWater(name) ? 'IN' : 'OUT'}",
                                                 ),
                                                 trailing: IconButton(
                                                   icon: const Icon(Icons.close),

@@ -89,7 +89,7 @@ class _HistoryPageState extends State<HistoryPage> {
         filterTab != "CHECKED-IN" &&
         filterTab != "IN WATER";
 
-    // Build sessions per diver (ignore tag changes for pairing; store tag from IN).
+    // Build sessions per diver (ignore tank changes for pairing; store tank from IN).
     final Map<String, List<Map<String, dynamic>>> openStacks = {};
     final List<Map<String, dynamic>> sessions = [];
 
@@ -272,7 +272,7 @@ class _HistoryPageState extends State<HistoryPage> {
     final sessions = getLogsFiltered();
     final buffer = StringBuffer();
     buffer.writeln(
-      "Name,Status,Tag,DateTime In,DateTime Out,Aquacoulisse In,Aquacoulisse Out,DiveDuration",
+      "Name,Status,Tank,DateTime In,DateTime Out,Aquacoulisse In,Aquacoulisse Out,DiveDuration",
     );
     for (final s in sessions) {
       final name = _csvSafe(s['name']);
@@ -301,7 +301,7 @@ class _HistoryPageState extends State<HistoryPage> {
     {
       final list = getCheckedInList();
       sb.writeln('<Worksheet ss:Name="Checked-in"><Table>');
-      final headers = ["Name", "Tag", "Water", "Checked‑In at"];
+      final headers = ["Name", "Tank", "Water", "Checked‑In at"];
       sb.write('<Row>');
       for (final h in headers) {
         sb.write('<Cell><Data ss:Type="String">${_xmlEscape(h)}</Data></Cell>');
@@ -339,7 +339,7 @@ class _HistoryPageState extends State<HistoryPage> {
       final headers = [
         "Name",
         "Status",
-        "Tag",
+        "Tank",
         "DateTime In",
         "DateTime Out",
         "Aquacoulisse In",
@@ -403,7 +403,7 @@ class _HistoryPageState extends State<HistoryPage> {
     if (diverIsInWater(name)) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text("Change tag after OUT.")));
+      ).showSnackBar(const SnackBar(content: Text("Change tank after OUT.")));
       return;
     }
     final result = await Navigator.push<int?>(
@@ -414,7 +414,7 @@ class _HistoryPageState extends State<HistoryPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            "Tag updated for $name to ${result.toString().padLeft(2, '0')}",
+            "Tank updated for $name to ${result.toString().padLeft(2, '0')}",
           ),
         ),
       );
@@ -520,7 +520,7 @@ class _HistoryPageState extends State<HistoryPage> {
                           ),
                           Expanded(
                             child: Text(
-                              "Tag",
+                              "Tank",
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14 * scale,
@@ -669,7 +669,7 @@ class _HistoryPageState extends State<HistoryPage> {
                           ),
                           Expanded(
                             child: Text(
-                              "Tag:",
+                              "Tank:",
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
                                 fontSize: 14 * scale,

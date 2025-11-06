@@ -78,25 +78,14 @@ class _DepartmentScreenState extends State<DepartmentScreen> {
             (d['department'] ?? '') != '')
           (d['department'] ?? '').toString(),
     };
-    // Group 'OTHER' departments into a single button on this screen
-    const otherGroup = {
-      "AUTOMATION",
-      "H&F",
-      "SFX",
-      "LX",
-      "SOUND",
-      "WARDROBE",
-      "STAGE MANAGEMENT",
-      "HEALTH & SAFETY",
-      "MANAGEMENT",
-      "ARTISTIC",
-      "VIP GUESTS",
-      "OTHER",
-    };
+    // Group any non core departments (not SHOW DIVERS / DAY CREW) under OTHER
 
     final bool hasShowDivers = depsWithDivers.contains("SHOW DIVERS");
     final bool hasDayCrew = depsWithDivers.contains("DAY CREW");
-    final bool hasOther = depsWithDivers.any((d) => otherGroup.contains(d));
+    // Treat any department that isn't SHOW DIVERS or DAY CREW as OTHER
+    final bool hasOther = depsWithDivers.any(
+      (d) => d != 'SHOW DIVERS' && d != 'DAY CREW',
+    );
     return Scaffold(
       body: Stack(
         children: [
@@ -202,8 +191,8 @@ class _DepartmentScreenState extends State<DepartmentScreen> {
                               ),
                               elevation: 0,
                             ),
-                          child: const Text("SHOW DIVERS"),
-                        ),
+                            child: const Text("SHOW DIVERS"),
+                          ),
                         if (hasDayCrew)
                           ElevatedButton(
                             onPressed: () => _openNext("DAY CREW"),

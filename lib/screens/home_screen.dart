@@ -88,25 +88,34 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Builder(
               builder: (_) {
                 final pretty = BuildInfo.prettyUpdatedLocal();
-                if (pretty.isEmpty) return const SizedBox.shrink();
                 final sha = BuildInfo.shortSha;
-                final text = sha.isNotEmpty
-                    ? 'Updated: $pretty · $sha'
-                    : 'Updated: $pretty';
+                final List<String> lines = [];
+                if (pretty.isNotEmpty) {
+                  lines.add(
+                    sha.isNotEmpty
+                        ? 'Updated: $pretty · $sha'
+                        : 'Updated: $pretty',
+                  );
+                }
+                // User requested static timestamp line
+                lines.add('Updated: 2025-11-07 at 02:08 AM');
                 return Container(
                   padding: EdgeInsets.symmetric(
-                    horizontal: 6 * scale,
-                    vertical: 2 * scale,
+                    horizontal: 8 * scale,
+                    vertical: 6 * scale,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.5),
+                    color: Colors.white.withOpacity(0.55),
                     borderRadius: BorderRadius.circular(6 * scale),
                   ),
                   child: Text(
-                    text,
+                    lines.join('\n'),
+                    textAlign: TextAlign.left,
                     style: TextStyle(
-                      fontSize: 12 * scale,
-                      color: Colors.black.withOpacity(0.6),
+                      fontSize: 11.5 * scale,
+                      height: 1.2,
+                      color: Colors.black.withOpacity(0.65),
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 );

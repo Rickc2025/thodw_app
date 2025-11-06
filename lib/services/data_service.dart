@@ -27,7 +27,7 @@ bool diverIsInWater(String name) {
   return diverLogs.last['status'] == 'IN';
 }
 
-int? lastInTag(String name) {
+int? lastInTank(String name) {
   final logsBox = Hive.box('logs');
   final logs = logsBox.get('logsList', defaultValue: <Map>[]);
   for (final log in List<Map>.from(logs).reversed) {
@@ -42,14 +42,14 @@ bool isCheckedIn(String name) {
   return (data['checkedIn'] ?? false) == true;
 }
 
-int? checkedInTag(String name) {
+int? checkedInTank(String name) {
   final box = Hive.box('checkins');
   final data = (box.get(name) ?? {}) as Map;
   if (data.isEmpty) return null;
   return data['tag'] is int ? data['tag'] : int.tryParse("${data['tag']}");
 }
 
-bool tagInUse(int tag, {String? exceptName}) {
+bool tankInUse(int tag, {String? exceptName}) {
   final box = Hive.box('checkins');
   for (final key in box.keys) {
     if (key == exceptName) continue;

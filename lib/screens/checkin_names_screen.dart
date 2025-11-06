@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
+import 'package:flutter/services.dart';
 
 import '../core/constants.dart';
 import '../core/utils.dart';
@@ -25,6 +26,7 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
   String? selectedDiver;
   int? selectedTag;
   int tagPage = 0;
+  final TextEditingController _tankController = TextEditingController();
 
   int currentlyIn = 0;
   Timer? _timer;
@@ -35,6 +37,21 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
   bool get isOtherAggregated => widget.department == "OTHER";
   // For the aggregated OTHER entry we allow drilling down into a specific department.
   String? selectedSubDepartment;
+
+  // Builds a map of sub-departments (excluding core ones) to diver counts for the OTHER drill-down
+  Map<String, int> _otherSubDepartmentCounts() {
+    final stored = diversBox.get('diversList', defaultValue: <Map>[]);
+    final list = List<Map>.from(stored);
+    final Map<String, int> counts = {};
+    for (final d in list) {
+      final dep = (d['department'] ?? '').toString();
+      if (dep.isEmpty) continue;
+      // Include all non-core departments; allow 'OTHER' to appear as a real department
+      if (dep == 'SHOW DIVERS' || dep == 'DAY CREW') continue;
+      counts[dep] = (counts[dep] ?? 0) + 1;
+    }
+    return counts;
+  }
 
   @override
   void initState() {
@@ -72,6 +89,7 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
   @override
   void dispose() {
     _timer?.cancel();
+    _tankController.dispose();
     super.dispose();
   }
 
@@ -79,7 +97,7 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
     if (isShowDivers) {
       return divers.where((d) => d['team'] == selectedTeam).toList();
     }
-  return divers;
+    return divers;
   }
 
   List<int> get currentTagPage {
@@ -101,21 +119,22 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
       selectedDiver = null;
       selectedTag = null;
       tagPage = 0;
+      _tankController.clear();
     });
   }
 
   void _confirm() {
     if (selectedDiver == null || selectedTag == null) {
-      _snack("Please select a tag number.");
+      _snack("Please enter a tank number.");
       return;
     }
     if (isCheckedIn(selectedDiver!)) {
-      _snack("Already checked in. Change tag from Log → Checked‑In.");
+      _snack("Already checked in. Change tank from Log → Checked‑In.");
       return;
     }
-    if (tagInUse(selectedTag!)) {
+    if (tankInUse(selectedTag!)) {
       _snack(
-        "Tag ${selectedTag!.toString().padLeft(2, '0')} is already in use.",
+        "Tank ${selectedTag!.toString().padLeft(2, '0')} is already in use.",
       );
       return;
     }
@@ -129,6 +148,7 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
       selectedDiver = null;
       selectedTag = null;
       tagPage = 0;
+      _tankController.clear();
     });
   }
 
@@ -194,8 +214,8 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
                   Text(
                     isOtherAggregated
                         ? (selectedSubDepartment == null
-                            ? "OTHER DEPARTMENTS - SELECT DEPARTMENT"
-                            : "${selectedSubDepartment} - CHECK IN")
+                              ? "OTHER DEPARTMENTS - SELECT DEPARTMENT"
+                              : "${selectedSubDepartment} - CHECK IN")
                         : "${widget.department} - CHECK IN",
                     style: TextStyle(
                       fontSize: (isPhone ? 28 : 36) * scale,
@@ -246,64 +266,64 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
 
                   if (isShowDivers) SizedBox(height: 8 * scale),
 
-                  // Sub-department selection for OTHER aggregate
+                  // Sub-department selection for OTHER aggregate (dynamic from current divers)
                   if (isOtherAggregated && selectedSubDepartment == null)
                     Padding(
                       padding: EdgeInsets.only(bottom: 8 * scale),
-                      child: Wrap(
-                        spacing: 10 * scale,
-                        runSpacing: 10 * scale,
-                        children: [
-                          for (final dep in const [
-                            "AUTOMATION",
-                            "H&F",
-                            "SFX",
-                            "LX",
-                            "SOUND",
-                            "WARDROBE",
-                            "STAGE MANAGEMENT",
-                            "HEALTH & SAFETY",
-                            "MANAGEMENT",
-                            "ARTISTIC",
-                            "VIP GUESTS",
-                            "OTHER",
-                          ])
-                            Builder(builder: (_) {
-                              final stored = Hive.box('divers')
-                                  .get('diversList', defaultValue: <Map>[]);
-                              final list = List<Map>.from(stored);
-                              final hasAny = list.any(
-                                (d) => (d['department'] ?? '') == dep,
-                              );
-                              if (!hasAny) return const SizedBox.shrink();
-                              return ElevatedButton(
-                                onPressed: () {
-                                  setState(() {
-                                    selectedSubDepartment = dep;
-                                    selectedDiver = null;
-                                    selectedTag = null;
-                                    tagPage = 0;
-                                    _loadDivers();
-                                  });
-                                },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.blueGrey[700],
-                                  foregroundColor: Colors.white,
-                                  minimumSize: Size(160 * scale, 54 * scale),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius:
-                                        BorderRadius.circular(30 * scale),
-                                  ),
-                                  textStyle: TextStyle(
-                                    fontSize: 16 * scale,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                  elevation: 0,
+                      child: Builder(
+                        builder: (_) {
+                          final counts = _otherSubDepartmentCounts();
+                          final deps = counts.keys.toList()..sort();
+                          if (deps.isEmpty) {
+                            return Center(
+                              child: Text(
+                                "No departments found.",
+                                style: TextStyle(
+                                  fontSize: (isPhone ? 18 : 22) * scale,
+                                  color: Colors.grey[600],
                                 ),
-                                child: Text(dep),
-                              );
-                            })
-                        ],
+                              ),
+                            );
+                          }
+                          return Wrap(
+                            spacing: 10 * scale,
+                            runSpacing: 10 * scale,
+                            children: [
+                              for (final dep in deps)
+                                ElevatedButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      selectedSubDepartment = dep;
+                                      selectedDiver = null;
+                                      selectedTag = null;
+                                      tagPage = 0;
+                                      _loadDivers();
+                                    });
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.blueGrey[700],
+                                    foregroundColor: Colors.white,
+                                    minimumSize: Size(160 * scale, 54 * scale),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(
+                                        30 * scale,
+                                      ),
+                                    ),
+                                    textStyle: TextStyle(
+                                      fontSize: 16 * scale,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    elevation: 0,
+                                  ),
+                                  child: Text(
+                                    counts[dep] != null
+                                        ? "$dep (${counts[dep]})"
+                                        : dep,
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
                       ),
                     ),
 
@@ -315,14 +335,14 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
                           child: Column(
                             children: [
                               // Department chooser panel for OTHER (no names yet)
-                              if (isOtherAggregated && selectedSubDepartment == null)
+                              if (isOtherAggregated &&
+                                  selectedSubDepartment == null)
                                 Expanded(
                                   child: Center(
                                     child: Text(
                                       "Select a department above.",
                                       style: TextStyle(
-                                        fontSize:
-                                            (isPhone ? 18 : 22) * scale,
+                                        fontSize: (isPhone ? 18 : 22) * scale,
                                         color: Colors.grey[600],
                                       ),
                                     ),
@@ -425,127 +445,41 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
                                       ),
                                       SizedBox(width: 16 * scale),
                                       Text(
-                                        "Tag number:",
+                                        "Tank number:",
                                         style: TextStyle(
                                           fontSize: 18 * scale,
                                           fontWeight: FontWeight.bold,
                                         ),
                                       ),
                                       SizedBox(width: 16 * scale),
-                                      Expanded(
-                                        child: SingleChildScrollView(
-                                          scrollDirection: Axis.horizontal,
-                                          child: Row(
-                                            children: [
-                                              for (
-                                                int i = 0;
-                                                i < maxTagPage;
-                                                i++
-                                              )
-                                                Padding(
-                                                  padding: EdgeInsets.symmetric(
-                                                    horizontal: 4 * scale,
-                                                  ),
-                                                  child: ElevatedButton(
-                                                    onPressed: () {
-                                                      setState(() {
-                                                        tagPage = i;
-                                                        selectedTag = null;
-                                                      });
-                                                    },
-                                                    style: ElevatedButton.styleFrom(
-                                                      backgroundColor:
-                                                          tagPage == i
-                                                          ? Colors.blue
-                                                          : Colors.grey[100],
-                                                      foregroundColor:
-                                                          tagPage == i
-                                                          ? Colors.white
-                                                          : Colors.black,
-                                                      shape: RoundedRectangleBorder(
-                                                        borderRadius:
-                                                            BorderRadius.circular(
-                                                              18 * scale,
-                                                            ),
-                                                      ),
-                                                      elevation: 0,
-                                                      minimumSize: Size(
-                                                        90 * scale,
-                                                        48 * scale,
-                                                      ),
-                                                      textStyle: TextStyle(
-                                                        fontSize: 14 * scale,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                      ),
-                                                    ),
-                                                    child: Text(
-                                                      "${(i * tagsPerPage + 1).toString().padLeft(2, '0')}-${((i + 1) * tagsPerPage).clamp(1, 100).toString().padLeft(2, '0')}",
-                                                    ),
-                                                  ),
-                                                ),
-                                            ],
+                                      SizedBox(
+                                        width: 160 * scale,
+                                        child: TextField(
+                                          controller: _tankController,
+                                          keyboardType: TextInputType.number,
+                                          inputFormatters: [
+                                            FilteringTextInputFormatter
+                                                .digitsOnly,
+                                          ],
+                                          onChanged: (val) {
+                                            final n = int.tryParse(val);
+                                            setState(() {
+                                              selectedTag = (n == null || n < 1)
+                                                  ? null
+                                                  : n.clamp(1, 999);
+                                            });
+                                          },
+                                          decoration: const InputDecoration(
+                                            hintText: 'Enter number',
+                                            border: OutlineInputBorder(),
                                           ),
                                         ),
                                       ),
                                     ],
                                   ),
                                 ),
-                                Expanded(
-                                  child: GridView.count(
-                                    crossAxisCount: crossAxisCount,
-                                    mainAxisSpacing: gridSpacing,
-                                    crossAxisSpacing: gridSpacing,
-                                    childAspectRatio: childAspect,
-                                    children: [
-                                      for (final t in currentTagPage)
-                                        Builder(
-                                          builder: (_) {
-                                            final inUse = tagInUse(t);
-                                            final bool isSelected =
-                                                selectedTag == t;
-                                            final Color bg = isSelected
-                                                ? (isShowDivers
-                                                      ? teamColor(selectedTeam)
-                                                      : Colors.black)
-                                                : (inUse
-                                                      ? Colors.grey[400]!
-                                                      : Colors.grey[300]!);
-                                            final Color fg = isSelected
-                                                ? (isShowDivers &&
-                                                          selectedTeam ==
-                                                              "WHITE"
-                                                      ? Colors.black
-                                                      : Colors.white)
-                                                : Colors.black;
-                                            return ElevatedButton(
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: bg,
-                                                foregroundColor: fg,
-                                                shape: RoundedRectangleBorder(
-                                                  borderRadius:
-                                                      BorderRadius.circular(
-                                                        22 * scale,
-                                                      ),
-                                                ),
-                                                elevation: 0,
-                                              ),
-                                              onPressed: inUse
-                                                  ? () => _snack(
-                                                      "Tag ${t.toString().padLeft(2, '0')} is already in use.",
-                                                    )
-                                                  : () => setState(
-                                                      () => selectedTag = t,
-                                                    ),
-                                              child: Text(
-                                                t.toString().padLeft(2, '0'),
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                    ],
-                                  ),
-                                ),
+                                // Removed grid of numbers in favor of numeric input only
+                                const SizedBox.shrink(),
                               ],
                             ],
                           ),
@@ -586,10 +520,9 @@ class _CheckInNamesScreenState extends State<CheckInNamesScreen> {
                                   child: ElevatedButton(
                                     onPressed:
                                         (selectedDiver != null &&
-                                                selectedTag != null &&
-                                                (!isOtherAggregated ||
-                                                    selectedSubDepartment !=
-                                                        null))
+                                            selectedTag != null &&
+                                            (!isOtherAggregated ||
+                                                selectedSubDepartment != null))
                                         ? _confirm
                                         : null,
                                     style: ElevatedButton.styleFrom(
