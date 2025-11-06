@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 
 import '../core/constants.dart';
 import '../core/utils.dart';
-import '../core/build_info.dart';
 import '../services/data_service.dart';
 import '../widgets/top_alert.dart';
 import 'aquacoulisse_screen.dart';
@@ -81,24 +80,14 @@ class _HomeScreenState extends State<HomeScreen> {
       body: Stack(
         children: [
           TopAlert(currentlyIn: currentlyIn, onTap: _openLog),
-          // Bottom-left build timestamp indicator to verify deployed version
+          // Bottom-left static updated timestamp (single line)
           Positioned(
             left: 12 * scale,
             bottom: 12 * scale,
             child: Builder(
               builder: (_) {
-                final pretty = BuildInfo.prettyUpdatedLocal();
-                final sha = BuildInfo.shortSha;
-                final List<String> lines = [];
-                if (pretty.isNotEmpty) {
-                  lines.add(
-                    sha.isNotEmpty
-                        ? 'Updated: $pretty · $sha'
-                        : 'Updated: $pretty',
-                  );
-                }
-                // User requested static timestamp line
-                lines.add('Updated: 2025-11-07 at 02:08 AM');
+                // User requested only the following static timestamp line
+                const text = 'Updated: 2025-11-07 at 02:08 AM';
                 return Container(
                   padding: EdgeInsets.symmetric(
                     horizontal: 8 * scale,
@@ -109,13 +98,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     borderRadius: BorderRadius.circular(6 * scale),
                   ),
                   child: Text(
-                    lines.join('\n'),
+                    text,
                     textAlign: TextAlign.left,
                     style: TextStyle(
                       fontSize: 11.5 * scale,
-                      height: 1.2,
                       color: Colors.black.withOpacity(0.65),
-                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 );
