@@ -60,319 +60,52 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _showAddDialog() {
-    String newName = '';
-    String selectedDepartment = getDepartmentChoicesForAdd().first;
-    String? selectedTeam = teams.first;
-    const manageSentinel = '__MANAGE_DEPARTMENTS__';
-
-    List<String> _departmentChoices() => getDepartmentChoicesForAdd();
-
-    Future<void> _openManageDepartments(
-      BuildContext ctx,
-      void Function(void Function()) setStateDialog,
-    ) async {
-      final controller = TextEditingController();
-      await showDialog(
-        context: ctx,
-        builder: (_) {
-          return StatefulBuilder(
-            builder: (c, setStateManage) {
-              final custom = getCustomDepartments();
-              final removableBuiltIns = [
-                for (final d in departments)
-                  if (d != 'SHOW DIVERS' && d != 'DAY CREW') d,
-              ];
-              return AlertDialog(
-                title: const Text('Manage Departments'),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: controller,
-                      decoration: const InputDecoration(
-                        labelText: 'Add new department',
-                        border: OutlineInputBorder(),
-                      ),
-                      onSubmitted: (_) {
-                        final n = controller.text.trim();
-                        if (n.isEmpty) return;
-                        addCustomDepartment(n);
-                        controller.clear();
-                        setStateManage(() {});
-                        setStateDialog(() {});
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Built-in departments (delete permanently):',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: 360,
-                      height: 200,
-                      child: ListView.separated(
-                        itemCount: removableBuiltIns.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (_, i) {
-                          final dep = removableBuiltIns[i];
-                          final stored = Hive.box(
-                            'divers',
-                          ).get('diversList', defaultValue: <Map>[]);
-                          final diverList = List<Map>.from(stored);
-                          final assignedCount = diverList
-                              .where((d) => (d['department'] ?? '') == dep)
-                              .length;
-                          final hasAssigned = assignedCount > 0;
-                          return ListTile(
-                            title: Text(dep),
-                            subtitle: hasAssigned
-                                ? Text(
-                                    '$assignedCount assigned • Remove or reassign divers first.',
-                                  )
-                                : const Text('No divers assigned'),
-                            trailing: IconButton(
-                              icon: Icon(
-                                Icons.delete_forever,
-                                color: hasAssigned ? Colors.grey : Colors.red,
-                              ),
-                              onPressed: hasAssigned
-                                  ? null
-                                  : () async {
-                                      final ok = await showDialog<bool>(
-                                        context: c,
-                                        builder: (dlgCtx) => AlertDialog(
-                                          title: const Text(
-                                            'Delete Department',
-                                          ),
-                                          content: Text(
-                                            "Delete '$dep'? This will remove it from choices.",
-                                          ),
-                                          actions: [
-                                            TextButton(
-                                              onPressed: () =>
-                                                  Navigator.pop(dlgCtx, false),
-                                              child: const Text('Cancel'),
-                                            ),
-                                            ElevatedButton(
-                                              style: ElevatedButton.styleFrom(
-                                                backgroundColor: Colors.red,
-                                              ),
-                                              onPressed: () =>
-                                                  Navigator.pop(dlgCtx, true),
-                                              child: const Text('Delete'),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                      if (ok == true) {
-                                        final success =
-                                            permanentlyRemoveBaseDepartment(
-                                              dep,
-                                            );
-                                        if (success) {
-                                          setStateManage(() {});
-                                          setStateDialog(() {});
-                                        }
-                                      }
-                                    },
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    if (custom.isEmpty)
-                      const Text('No custom departments yet.')
-                    else
-                      SizedBox(
-                        width: 360,
-                        height: 220,
-                        child: ListView.separated(
-                          itemCount: custom.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
-                          itemBuilder: (_, i) => ListTile(
-                            title: Text(custom[i]),
-                            trailing: IconButton(
-                              icon: const Icon(Icons.delete, color: Colors.red),
-                              onPressed: () {
-                                removeCustomDepartment(custom[i]);
-                                setStateManage(() {});
-                                setStateDialog(() {});
-                              },
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(c),
-                    child: const Text('Close'),
-                  ),
-                  ElevatedButton(
-                    onPressed: () {
-                      final n = controller.text.trim();
-                      if (n.isNotEmpty) {
-                        addCustomDepartment(n);
-                        controller.clear();
-                        setStateManage(() {});
-                        setStateDialog(() {});
-                      }
-                    },
-                    child: const Text('Add'),
-                  ),
-                ],
-              );
-            },
-          );
-        },
-      );
-    }
-
-    showDialog(
-      context: context,
-      builder: (_) => StatefulBuilder(
-        builder: (ctx, setStateDialog) => AlertDialog(
-          title: const Text('Add Diver'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                autofocus: true,
-                decoration: const InputDecoration(
-                  labelText: 'Diver Name',
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (v) => newName = v,
-              ),
-              const SizedBox(height: 14),
-              DropdownButtonFormField<String>(
-                value: selectedDepartment,
-                decoration: const InputDecoration(
-                  labelText: 'Department',
-                  border: OutlineInputBorder(),
-                ),
-                items: [
-                  for (final dep in _departmentChoices())
-                    DropdownMenuItem(value: dep, child: Text(dep)),
-                  const DropdownMenuItem(
-                    value: manageSentinel,
-                    child: Text('Manage departments…'),
-                  ),
-                ],
-                onChanged: (val) async {
-                  if (val == null) return;
-                  if (val == manageSentinel) {
-                    await _openManageDepartments(context, setStateDialog);
-                    // Keep current selection or reset to first available
-                    final choices = _departmentChoices();
-                    if (!choices.contains(selectedDepartment)) {
-                      selectedDepartment = choices.first;
-                    }
-                    setStateDialog(() {});
-                    return;
-                  }
-                  setStateDialog(() {
-                    selectedDepartment = val;
-                    if (selectedDepartment == "SHOW DIVERS") {
-                      selectedTeam ??= teams.first;
-                    } else {
-                      selectedTeam = null;
-                    }
-                  });
-                },
-              ),
-              if (selectedDepartment == "SHOW DIVERS") ...[
-                const SizedBox(height: 14),
-                DropdownButtonFormField<String>(
-                  value: selectedTeam,
-                  decoration: const InputDecoration(
-                    labelText: 'Team',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: [
-                    for (final t in teams)
-                      DropdownMenuItem(value: t, child: Text(t)),
-                  ],
-                  onChanged: (val) => setStateDialog(() => selectedTeam = val),
-                ),
-              ],
-            ],
-          ),
-          actions: [
-            TextButton(
-              child: const Text('Cancel'),
-              onPressed: () => Navigator.pop(ctx),
-            ),
-            ElevatedButton(
-              child: const Text('Add'),
-              onPressed: () {
-                if (newName.trim().isEmpty) {
-                  _snack("Diver name can't be empty.");
-                  return;
-                }
-                final arr = diversBox.get('diversList', defaultValue: <Map>[]);
-                if (List<Map>.from(arr).any(
-                  (d) =>
-                      (d['name'] ?? '').toLowerCase() ==
-                      newName.trim().toLowerCase(),
-                )) {
-                  _snack("Diver already exists.");
-                  return;
-                }
-                final list = List<Map>.from(arr);
-                list.add({
-                  'name': newName.trim(),
-                  'department': selectedDepartment,
-                  'team': selectedTeam,
-                });
-                diversBox.put('diversList', list);
-                Navigator.pop(ctx);
-                setState(() {});
-                _snack("Diver added!");
-              },
-            ),
-          ],
-        ),
-      ),
-    );
+    // Use the same full-featured dialog as Edit Diver, but with empty defaults.
+    _showDiverDialog(diver: null);
   }
 
   // (Old remove dialog removed; editing covers name/department updates. Implement removal if needed.)
 
   void _showEditDiverDialog(Map diver) {
+    _showDiverDialog(diver: diver);
+  }
+
+  void _showDiverDialog({Map? diver}) {
     final checkinsBox = Hive.box('checkins');
-    String oldName = (diver['name'] ?? '').toString();
-    String newName = oldName;
-    String selectedDepartment = (diver['department'] ?? '').toString();
+    final bool isEdit = diver != null;
+    String oldName = isEdit ? (diver['name'] ?? '').toString() : '';
+    String newName = isEdit ? oldName : '';
+    String selectedDepartment = isEdit
+        ? (diver['department'] ?? '').toString()
+        : (getDepartmentChoicesForAdd().isNotEmpty
+              ? getDepartmentChoicesForAdd().first
+              : 'SHOW DIVERS');
     if (selectedDepartment.isEmpty) {
       final choices = getDepartmentChoicesForAdd();
       if (choices.isNotEmpty) selectedDepartment = choices.first;
     }
     String? selectedTeam = selectedDepartment == 'SHOW DIVERS'
-        ? ((diver['team'] ?? teams.first).toString())
+        ? (isEdit ? (diver['team'] ?? teams.first).toString() : teams.first)
         : null;
-    bool gasAir = (diver['gasAir'] ?? false) == true;
-    bool gasNitrox = (diver['gasNitrox'] ?? false) == true;
-    bool gffm = (diver['gffm'] ?? false) == true;
+    bool gasAir = isEdit ? (diver['gasAir'] ?? false) == true : false;
+    bool gasNitrox = isEdit ? (diver['gasNitrox'] ?? false) == true : false;
+    bool gffm = isEdit ? (diver['gffm'] ?? false) == true : false;
 
     showDialog(
       context: context,
       builder: (_) => StatefulBuilder(
         builder: (ctx, setDialog) => AlertDialog(
-          title: const Text('Edit Diver'),
+          title: Text(isEdit ? 'Edit Diver' : 'Add Diver'),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 TextField(
-                  controller: TextEditingController(text: newName),
+                  controller: TextEditingController(
+                    text: isEdit ? newName : null,
+                  ),
+                  autofocus: !isEdit,
                   decoration: const InputDecoration(
                     labelText: 'Diver Name',
                     border: OutlineInputBorder(),
@@ -432,7 +165,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       selectedColor: Colors.blue[300],
                       onSelected: (v) => setDialog(() {
                         gasAir = v;
-                        if (v) gasNitrox = false; // enforce mutual exclusivity
+                        if (v) gasNitrox = false;
                       }),
                     ),
                     FilterChip(
@@ -441,7 +174,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       selectedColor: Colors.green[400],
                       onSelected: (v) => setDialog(() {
                         gasNitrox = v;
-                        if (v) gasAir = false; // enforce mutual exclusivity
+                        if (v) gasAir = false;
                       }),
                     ),
                   ],
@@ -464,50 +197,50 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: () async {
-                final ok = await showDialog<bool>(
-                  context: ctx,
-                  builder: (confirmCtx) => AlertDialog(
-                    title: const Text('Remove Diver'),
-                    content: Text(
-                      "Are you sure you want to remove '$oldName'?",
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(confirmCtx, false),
-                        child: const Text('Cancel'),
+            if (isEdit)
+              TextButton(
+                onPressed: () async {
+                  final ok = await showDialog<bool>(
+                    context: ctx,
+                    builder: (confirmCtx) => AlertDialog(
+                      title: const Text('Remove Diver'),
+                      content: Text(
+                        "Are you sure you want to remove '$oldName'?",
                       ),
-                      ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red,
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(confirmCtx, false),
+                          child: const Text('Cancel'),
                         ),
-                        onPressed: () => Navigator.pop(confirmCtx, true),
-                        child: const Text('Remove'),
-                      ),
-                    ],
-                  ),
-                );
-                if (ok == true) {
-                  final arr = diversBox.get(
-                    'diversList',
-                    defaultValue: <Map>[],
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                          ),
+                          onPressed: () => Navigator.pop(confirmCtx, true),
+                          child: const Text('Remove'),
+                        ),
+                      ],
+                    ),
                   );
-                  final list = List<Map>.from(arr);
-                  list.removeWhere((d) => (d['name'] ?? '') == oldName);
-                  diversBox.put('diversList', list);
-                  // Also clear any check-in entry for this diver
-                  checkinsBox.delete(oldName);
-                  Navigator.pop(ctx);
-                  setState(() {});
-                  _snack('Diver removed.');
-                }
-              },
-              child: const Text(
-                'Remove Diver',
-                style: TextStyle(color: Colors.red),
+                  if (ok == true) {
+                    final arr = diversBox.get(
+                      'diversList',
+                      defaultValue: <Map>[],
+                    );
+                    final list = List<Map>.from(arr);
+                    list.removeWhere((d) => (d['name'] ?? '') == oldName);
+                    diversBox.put('diversList', list);
+                    checkinsBox.delete(oldName);
+                    Navigator.pop(ctx);
+                    setState(() {});
+                    _snack('Diver removed.');
+                  }
+                },
+                child: const Text(
+                  'Remove Diver',
+                  style: TextStyle(color: Colors.red),
+                ),
               ),
-            ),
             TextButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text('Cancel'),
@@ -520,46 +253,72 @@ class _SettingsPageState extends State<SettingsPage> {
                 }
                 final arr = diversBox.get('diversList', defaultValue: <Map>[]);
                 final list = List<Map>.from(arr);
-                // Check duplicate name (excluding current diver)
-                if (list.any(
-                  (d) =>
-                      (d['name'] ?? '').toString().toLowerCase() ==
-                          newName.trim().toLowerCase() &&
-                      (d['name'] ?? '') != oldName,
-                )) {
-                  _snack('Another diver already has this name.');
-                  return;
-                }
-                // Update diver record
-                for (int i = 0; i < list.length; i++) {
-                  if ((list[i]['name'] ?? '') == oldName) {
-                    list[i] = {
-                      'name': newName.trim(),
-                      'department': selectedDepartment,
-                      'team': selectedDepartment == 'SHOW DIVERS'
-                          ? selectedTeam
-                          : null,
-                      'gasAir': gasAir,
-                      'gasNitrox': gasNitrox,
-                      'gffm': gffm,
-                    };
-                    break;
+                if (isEdit) {
+                  // Check duplicate name (excluding current diver)
+                  if (list.any(
+                    (d) =>
+                        (d['name'] ?? '').toString().toLowerCase() ==
+                            newName.trim().toLowerCase() &&
+                        (d['name'] ?? '') != oldName,
+                  )) {
+                    _snack('Another diver already has this name.');
+                    return;
                   }
-                }
-                diversBox.put('diversList', list);
-                // Migrate check-in key if name changed
-                if (oldName != newName.trim()) {
-                  final data = checkinsBox.get(oldName);
-                  if (data != null) {
-                    checkinsBox.put(newName.trim(), data);
-                    checkinsBox.delete(oldName);
+                  // Update diver record
+                  for (int i = 0; i < list.length; i++) {
+                    if ((list[i]['name'] ?? '') == oldName) {
+                      list[i] = {
+                        'name': newName.trim(),
+                        'department': selectedDepartment,
+                        'team': selectedDepartment == 'SHOW DIVERS'
+                            ? selectedTeam
+                            : null,
+                        'gasAir': gasAir,
+                        'gasNitrox': gasNitrox,
+                        'gffm': gffm,
+                      };
+                      break;
+                    }
                   }
+                  diversBox.put('diversList', list);
+                  // Migrate check-in key if name changed
+                  if (oldName != newName.trim()) {
+                    final data = checkinsBox.get(oldName);
+                    if (data != null) {
+                      checkinsBox.put(newName.trim(), data);
+                      checkinsBox.delete(oldName);
+                    }
+                  }
+                  Navigator.pop(ctx);
+                  setState(() {});
+                  _snack('Diver updated.');
+                } else {
+                  // Add new diver
+                  if (list.any(
+                    (d) =>
+                        (d['name'] ?? '').toString().toLowerCase() ==
+                        newName.trim().toLowerCase(),
+                  )) {
+                    _snack('Diver already exists.');
+                    return;
+                  }
+                  list.add({
+                    'name': newName.trim(),
+                    'department': selectedDepartment,
+                    'team': selectedDepartment == 'SHOW DIVERS'
+                        ? selectedTeam
+                        : null,
+                    'gasAir': gasAir,
+                    'gasNitrox': gasNitrox,
+                    'gffm': gffm,
+                  });
+                  diversBox.put('diversList', list);
+                  Navigator.pop(ctx);
+                  setState(() {});
+                  _snack('Diver added!');
                 }
-                Navigator.pop(ctx);
-                setState(() {});
-                _snack('Diver updated.');
               },
-              child: const Text('Save'),
+              child: Text(isEdit ? 'Save' : 'Add'),
             ),
           ],
         ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../core/utils.dart';
 import '../services/data_service.dart';
@@ -47,8 +48,6 @@ class _ChangeTagScreenState extends State<ChangeTagScreen> {
     final scale = appScale(context);
     final isPhone = MediaQuery.of(context).size.width < 600;
 
-    // grid variables removed; numeric input replaces grid selection
-
     return Scaffold(
       appBar: AppBar(
         title: const Text("Change Tank"),
@@ -59,67 +58,124 @@ class _ChangeTagScreenState extends State<ChangeTagScreen> {
       ),
       body: Padding(
         padding: EdgeInsets.all(12 * scale),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Row(
           children: [
-            Text(
-              widget.diverName,
-              style: TextStyle(
-                fontSize: (isPhone ? 26 : 32) * scale,
-                fontWeight: FontWeight.bold,
+            // Left: centered vertical input group
+            Expanded(
+              flex: 2,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final dx = constraints.maxWidth * 0.25;
+                  final dy = -constraints.maxHeight * 0.10;
+                  return Center(
+                    child: Transform.translate(
+                      offset: Offset(dx, dy),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            "Tank number:",
+                            style: TextStyle(
+                              fontSize: 18 * scale,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          SizedBox(height: 10 * scale),
+                          SizedBox(
+                            width: (isPhone ? 300 : 420) * scale,
+                            child: TextField(
+                              controller: _tankController,
+                              keyboardType: TextInputType.number,
+                              inputFormatters: [
+                                FilteringTextInputFormatter.digitsOnly,
+                                LengthLimitingTextInputFormatter(3),
+                              ],
+                              onChanged: (val) {
+                                final n = int.tryParse(val);
+                                setState(() {
+                                  selectedTag = (n == null || n < 1)
+                                      ? null
+                                      : n.clamp(1, 999);
+                                });
+                              },
+                              decoration: const InputDecoration(
+                                hintText: 'Enter number',
+                                border: OutlineInputBorder(),
+                              ),
+                            ),
+                          ),
+                          SizedBox(height: 16 * scale),
+                          ElevatedButton(
+                            onPressed: () => Navigator.pop(context),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red[400],
+                              foregroundColor: Colors.white,
+                              minimumSize: Size(140 * scale, 48 * scale),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(24 * scale),
+                              ),
+                              textStyle: TextStyle(
+                                fontSize: 16 * scale,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            child: const Text("Cancel"),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
-            SizedBox(height: 10 * scale),
-            Row(
-              children: [
-                Text(
-                  "Tank number:",
-                  style: TextStyle(
-                    fontSize: 18 * scale,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                SizedBox(width: 16 * scale),
-                SizedBox(
-                  width: 160 * scale,
-                  child: TextField(
-                    controller: _tankController,
-                    keyboardType: TextInputType.number,
-                    onChanged: (val) {
-                      final n = int.tryParse(val);
-                      setState(() {
-                        selectedTag = (n == null || n < 1)
-                            ? null
-                            : n.clamp(1, 999);
-                      });
-                    },
-                    decoration: const InputDecoration(
-                      hintText: 'Enter number',
-                      border: OutlineInputBorder(),
+            // Right: diver name and confirm button at bottom
+            Expanded(
+              flex: 1,
+              child: Column(
+                children: [
+                  Text(
+                    widget.diverName,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: (isPhone ? 30 : 42) * scale,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
-                ),
-              ],
-            ),
-            SizedBox(height: 8 * scale),
-            const Spacer(),
-            SizedBox(
-              width: (isPhone ? 160 : 200) * scale,
-              height: (isPhone ? 60 : 70) * scale,
-              child: ElevatedButton(
-                onPressed: _confirm,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green[600],
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(36 * scale),
+                  if (selectedTag != null)
+                    Padding(
+                      padding: EdgeInsets.only(top: 12 * scale),
+                      child: Text(
+                        selectedTag!.toString().padLeft(2, '0'),
+                        style: TextStyle(
+                          fontSize: (isPhone ? 26 : 36) * scale,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  const Spacer(),
+                  Padding(
+                    padding: EdgeInsets.only(bottom: 40 * scale),
+                    child: SizedBox(
+                      width: (isPhone ? 160 : 200) * scale,
+                      height: (isPhone ? 60 : 70) * scale,
+                      child: ElevatedButton(
+                        onPressed: _confirm,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green[600],
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(36 * scale),
+                          ),
+                          textStyle: TextStyle(
+                            fontSize: (isPhone ? 20 : 22) * scale,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        child: const Text("Confirm"),
+                      ),
+                    ),
                   ),
-                  textStyle: TextStyle(
-                    fontSize: (isPhone ? 20 : 22) * scale,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                child: const Text("Confirm"),
+                ],
               ),
             ),
           ],
