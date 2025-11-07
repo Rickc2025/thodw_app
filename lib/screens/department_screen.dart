@@ -7,7 +7,7 @@ import '../core/utils.dart';
 import '../core/navigation.dart';
 import '../services/data_service.dart';
 import '../widgets/top_alert.dart';
-import 'checkin_names_screen.dart';
+import 'checkin_names_screen2.dart';
 import 'history_page.dart';
 import 'settings_page.dart';
 
@@ -44,7 +44,7 @@ class _DepartmentScreenState extends State<DepartmentScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => CheckInNamesScreen(department: department),
+        builder: (_) => CheckInNamesScreen2(department: department),
       ),
     );
   }

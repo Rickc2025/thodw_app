@@ -220,6 +220,9 @@ class _HistoryPageState extends State<HistoryPage> {
         return Colors.red[400];
       case "WHITE":
         return Colors.grey[400];
+      case "IN WATER":
+        // Make selected IN WATER tab high-contrast (match alert orange tone)
+        return Colors.orange[800];
       case "ALL":
         return Colors.black54;
       default:
@@ -230,6 +233,7 @@ class _HistoryPageState extends State<HistoryPage> {
   Color _tabTextColor(String t, bool selected) {
     if (!selected) return Colors.black;
     if (t == "WHITE") return Colors.black;
+    if (t == "IN WATER") return Colors.white; // ensure contrast on orange
     return Colors.white;
   }
 
