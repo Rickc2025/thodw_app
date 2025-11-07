@@ -419,102 +419,75 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
                                 Expanded(
                                   child: LayoutBuilder(
                                     builder: (context, constraints) {
-                                      // layout-based positioning for web focus reliability
-                                      return SizedBox(
-                                        width: constraints.maxWidth,
-                                        height: constraints.maxHeight,
-                                        child: Padding(
-                                          padding: EdgeInsets.only(
-                                            bottom:
-                                                constraints.maxHeight * 0.10,
-                                          ), // up 10%
-                                          child: Row(
+                                      // Revert to transform-based positioning per user preference
+                                      final dx =
+                                          constraints.maxWidth *
+                                          0.25; // move right 25%
+                                      final dy =
+                                          -constraints.maxHeight *
+                                          0.10; // move up 10%
+                                      return Center(
+                                        child: Transform.translate(
+                                          offset: Offset(dx, dy),
+                                          child: Column(
+                                            mainAxisSize: MainAxisSize.min,
                                             children: [
+                                              Text(
+                                                'Tank number:',
+                                                style: TextStyle(
+                                                  fontSize: 18 * scale,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                              SizedBox(height: 10 * scale),
                                               SizedBox(
                                                 width:
-                                                    constraints.maxWidth * 0.25,
-                                              ), // right 25%
-                                              Expanded(
-                                                child: Center(
-                                                  child: Column(
-                                                    mainAxisSize:
-                                                        MainAxisSize.min,
-                                                    children: [
-                                                      Text(
-                                                        'Tank number:',
-                                                        style: TextStyle(
-                                                          fontSize: 18 * scale,
-                                                          fontWeight:
-                                                              FontWeight.bold,
+                                                    (isPhone ? 300 : 420) *
+                                                    scale,
+                                                child: TextField(
+                                                  controller: _tankController,
+                                                  keyboardType:
+                                                      TextInputType.number,
+                                                  inputFormatters: [
+                                                    FilteringTextInputFormatter
+                                                        .digitsOnly,
+                                                    LengthLimitingTextInputFormatter(
+                                                      3,
+                                                    ),
+                                                  ],
+                                                  onChanged: _applyInput,
+                                                  decoration:
+                                                      const InputDecoration(
+                                                        hintText:
+                                                            'Enter number',
+                                                        border:
+                                                            OutlineInputBorder(),
+                                                      ),
+                                                ),
+                                              ),
+                                              SizedBox(height: 16 * scale),
+                                              ElevatedButton(
+                                                onPressed: _cancel,
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor:
+                                                      Colors.red[400],
+                                                  foregroundColor: Colors.white,
+                                                  minimumSize: Size(
+                                                    140 * scale,
+                                                    48 * scale,
+                                                  ),
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                          24 * scale,
                                                         ),
-                                                      ),
-                                                      SizedBox(
-                                                        height: 10 * scale,
-                                                      ),
-                                                      SizedBox(
-                                                        width:
-                                                            (isPhone
-                                                                ? 300
-                                                                : 420) *
-                                                            scale,
-                                                        child: TextField(
-                                                          controller:
-                                                              _tankController,
-                                                          keyboardType:
-                                                              TextInputType
-                                                                  .number,
-                                                          inputFormatters: [
-                                                            FilteringTextInputFormatter
-                                                                .digitsOnly,
-                                                            LengthLimitingTextInputFormatter(
-                                                              3,
-                                                            ),
-                                                          ],
-                                                          onChanged:
-                                                              _applyInput,
-                                                          decoration:
-                                                              const InputDecoration(
-                                                                hintText:
-                                                                    'Enter number',
-                                                                border:
-                                                                    OutlineInputBorder(),
-                                                              ),
-                                                        ),
-                                                      ),
-                                                      SizedBox(
-                                                        height: 16 * scale,
-                                                      ),
-                                                      ElevatedButton(
-                                                        onPressed: _cancel,
-                                                        style: ElevatedButton.styleFrom(
-                                                          backgroundColor:
-                                                              Colors.red[400],
-                                                          foregroundColor:
-                                                              Colors.white,
-                                                          minimumSize: Size(
-                                                            140 * scale,
-                                                            48 * scale,
-                                                          ),
-                                                          shape: RoundedRectangleBorder(
-                                                            borderRadius:
-                                                                BorderRadius.circular(
-                                                                  24 * scale,
-                                                                ),
-                                                          ),
-                                                          textStyle: TextStyle(
-                                                            fontSize:
-                                                                16 * scale,
-                                                            fontWeight:
-                                                                FontWeight.bold,
-                                                          ),
-                                                        ),
-                                                        child: const Text(
-                                                          'Cancel',
-                                                        ),
-                                                      ),
-                                                    ],
+                                                  ),
+                                                  textStyle: TextStyle(
+                                                    fontSize: 16 * scale,
+                                                    fontWeight: FontWeight.bold,
                                                   ),
                                                 ),
+                                                child: const Text('Cancel'),
                                               ),
                                             ],
                                           ),
