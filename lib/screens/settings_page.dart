@@ -184,7 +184,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     const Text(
-                      'GFFM:',
+                      'Guardian Full Face Mask:',
                       style: TextStyle(fontWeight: FontWeight.w600),
                     ),
                     Switch(
@@ -249,6 +249,11 @@ class _SettingsPageState extends State<SettingsPage> {
               onPressed: () {
                 if (newName.trim().isEmpty) {
                   _snack("Name can't be empty.");
+                  return;
+                }
+                // Require at least one gas selection (Air or Nitrox)
+                if (!gasAir && !gasNitrox) {
+                  _snack("Select gas: Air or Nitrox.");
                   return;
                 }
                 final arr = diversBox.get('diversList', defaultValue: <Map>[]);
