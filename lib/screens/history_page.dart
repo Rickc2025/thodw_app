@@ -93,7 +93,8 @@ class _HistoryPageState extends State<HistoryPage> {
     final Map<String, List<Map<String, dynamic>>> openStacks = {};
     final List<Map<String, dynamic>> sessions = [];
 
-    for (final log in chronological) {
+    for (int i = 0; i < chronological.length; i++) {
+      final log = chronological[i];
       final name = (log['name'] ?? '').toString();
       if (name.isEmpty) continue;
       final status = (log['status'] ?? '').toString().toUpperCase();
@@ -109,6 +110,10 @@ class _HistoryPageState extends State<HistoryPage> {
           'aquacoulisseIn': (log['aquacoulisse'] ?? '').toString(),
           'aquacoulisseOut': null,
           'diveDuration': '',
+          'gasIn': log['gasIn'],
+          'gasOut': null,
+          'logIndexIn': i,
+          'logIndexOut': null,
         };
         openStacks
             .putIfAbsent(name, () => <Map<String, dynamic>>[])
@@ -121,6 +126,8 @@ class _HistoryPageState extends State<HistoryPage> {
           final last = stack.removeLast();
           last['datetimeOut'] = dt.toIso8601String();
           last['aquacoulisseOut'] = (log['aquacoulisse'] ?? '').toString();
+          last['gasOut'] = log['gasOut'];
+          last['logIndexOut'] = i;
           final inDt = _tryParseDT(last['datetimeIn']);
           if (inDt != null && dt.isAfter(inDt)) {
             last['diveDuration'] = _formatDuration(dt.difference(inDt));
@@ -269,25 +276,49 @@ class _HistoryPageState extends State<HistoryPage> {
 
   String _timestampBase() {
     final now = DateTime.now();
-    return "dive_log_${now.year}_${now.month.toString().padLeft(2, '0')}_${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}";
+    const months = [
+      'jan',
+      'feb',
+      'mar',
+      'apr',
+      'may',
+      'jun',
+      'jul',
+      'aug',
+      'sep',
+      'oct',
+      'nov',
+      'dec',
+    ];
+    final mon = months[now.month - 1];
+    final yyyy = now.year.toString();
+    final dd = now.day.toString().padLeft(2, '0');
+    final hm =
+        '${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}';
+    // Example: 2025_nov_10_0046_dive_log
+    return '${yyyy}_${mon}_${dd}_${hm}_dive_log';
   }
 
   Future<void> _exportCSV() async {
     final sessions = getLogsFiltered();
     final buffer = StringBuffer();
     buffer.writeln(
-      "Name,Status,Tank,DateTime In,DateTime Out,Aquacoulisse In,Aquacoulisse Out,DiveDuration",
+      "Name,Status,Tank,Gas In,Gas Out,DateTime In,DateTime Out,Aquacoulisse In,Aquacoulisse Out,DiveDuration",
     );
     for (final s in sessions) {
       final name = _csvSafe(s['name']);
       final status = _csvSafe((s['datetimeOut'] == null) ? 'IN' : 'OUT');
       final tag = _csvSafe(s['tag']?.toString());
+      final gasIn = _csvSafe(s['gasIn'] == null ? '' : '${s['gasIn']}bar');
+      final gasOut = _csvSafe(s['gasOut'] == null ? '' : '${s['gasOut']}bar');
       final dtIn = _csvSafe(s['datetimeIn']);
       final dtOut = _csvSafe(s['datetimeOut']);
       final aqIn = _csvSafe(s['aquacoulisseIn']);
       final aqOut = _csvSafe(s['aquacoulisseOut']);
       final dd = _csvSafe(s['diveDuration']);
-      buffer.writeln('$name,$status,$tag,$dtIn,$dtOut,$aqIn,$aqOut,$dd');
+      buffer.writeln(
+        '$name,$status,$tag,$gasIn,$gasOut,$dtIn,$dtOut,$aqIn,$aqOut,$dd',
+      );
     }
     await Exporter.saveCsv(_timestampBase(), buffer.toString());
   }
@@ -344,6 +375,8 @@ class _HistoryPageState extends State<HistoryPage> {
         "Name",
         "Status",
         "Tank",
+        "Gas In",
+        "Gas Out",
         "DateTime In",
         "DateTime Out",
         "Aquacoulisse In",
@@ -362,6 +395,8 @@ class _HistoryPageState extends State<HistoryPage> {
           (s['name'] ?? '').toString(),
           status,
           (s['tag'] ?? '').toString(),
+          s['gasIn'] == null ? '' : '${s['gasIn']}bar',
+          s['gasOut'] == null ? '' : '${s['gasOut']}bar',
           (s['datetimeIn'] ?? '').toString(),
           (s['datetimeOut'] ?? '').toString(),
           (s['aquacoulisseIn'] ?? '').toString(),
@@ -401,6 +436,201 @@ class _HistoryPageState extends State<HistoryPage> {
       return '"${s.replaceAll('"', '""')}"';
     }
     return s;
+  }
+
+  Future<void> _editSessionDialog(Map<String, dynamic> session) async {
+    final List logsList = List<Map>.from(
+      logsBox.get('logsList', defaultValue: <Map>[]),
+    );
+    // Extract existing values
+    String tank = (session['tag'] ?? '').toString();
+    int? gasIn = session['gasIn'] is int ? session['gasIn'] as int : null;
+    int? gasOut = session['gasOut'] is int ? session['gasOut'] as int : null;
+    DateTime? dtIn = _tryParseDT(session['datetimeIn']);
+    DateTime? dtOut = _tryParseDT(session['datetimeOut']);
+    String aqIn = (session['aquacoulisseIn'] ?? '').toString().toUpperCase();
+    String aqOut = (session['aquacoulisseOut'] ?? '').toString().toUpperCase();
+
+    final tankCtrl = TextEditingController(text: tank);
+    final gasInCtrl = TextEditingController(text: gasIn?.toString() ?? '');
+    final gasOutCtrl = TextEditingController(text: gasOut?.toString() ?? '');
+
+    Future<void> _pickIn() async {
+      dtIn ??= DateTime.now();
+      final d = await showDatePicker(
+        context: context,
+        initialDate: dtIn!,
+        firstDate: DateTime(2020),
+        lastDate: DateTime(2100),
+      );
+      if (d == null) return;
+      final t = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay.fromDateTime(dtIn!),
+      );
+      if (t == null) return;
+      dtIn = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+    }
+
+    Future<void> _pickOut() async {
+      dtOut ??= DateTime.now();
+      final d = await showDatePicker(
+        context: context,
+        initialDate: dtOut!,
+        firstDate: DateTime(2020),
+        lastDate: DateTime(2100),
+      );
+      if (d == null) return;
+      final t = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay.fromDateTime(dtOut!),
+      );
+      if (t == null) return;
+      dtOut = DateTime(d.year, d.month, d.day, t.hour, t.minute);
+    }
+
+    await showDialog(
+      context: context,
+      builder: (dialogCtx) => StatefulBuilder(
+        builder: (ctx, setStateDialog) => AlertDialog(
+          title: const Text('Edit Session'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: tankCtrl,
+                  decoration: const InputDecoration(labelText: 'Tank'),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: gasInCtrl,
+                  decoration: const InputDecoration(labelText: 'Gas In (bar)'),
+                  keyboardType: TextInputType.number,
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: gasOutCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Gas Out (bar)',
+                    hintText: 'Blank for ? bar',
+                  ),
+                  keyboardType: TextInputType.number,
+                ),
+                const Divider(height: 20),
+                Row(
+                  children: [
+                    const Text('In:'),
+                    const SizedBox(width: 6),
+                    Text(
+                      dtIn == null
+                          ? '—'
+                          : '${dtIn!.year}-${dtIn!.month.toString().padLeft(2, '0')}-${dtIn!.day.toString().padLeft(2, '0')} '
+                                '${dtIn!.hour.toString().padLeft(2, '0')}:${dtIn!.minute.toString().padLeft(2, '0')}',
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        await _pickIn();
+                        setStateDialog(() {});
+                      },
+                      child: const Text('Change'),
+                    ),
+                  ],
+                ),
+                Row(
+                  children: [
+                    const Text('Out:'),
+                    const SizedBox(width: 6),
+                    Text(
+                      dtOut == null
+                          ? '—'
+                          : '${dtOut!.year}-${dtOut!.month.toString().padLeft(2, '0')}-${dtOut!.day.toString().padLeft(2, '0')} '
+                                '${dtOut!.hour.toString().padLeft(2, '0')}:${dtOut!.minute.toString().padLeft(2, '0')}',
+                    ),
+                    TextButton(
+                      onPressed: () async {
+                        await _pickOut();
+                        setStateDialog(() {});
+                      },
+                      child: const Text('Change'),
+                    ),
+                  ],
+                ),
+                const Divider(height: 20),
+                DropdownButtonFormField<String>(
+                  value: aqIn.isEmpty ? null : aqIn,
+                  items: [
+                    for (final t in ['BLUE', 'GREEN', 'RED', 'WHITE'])
+                      DropdownMenuItem(
+                        value: t,
+                        child: Text('Aquacoulisse In: $t'),
+                      ),
+                  ],
+                  onChanged: (v) => setStateDialog(() => aqIn = v ?? ''),
+                  decoration: const InputDecoration(
+                    hintText: 'Aquacoulisse In',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: aqOut.isEmpty ? null : aqOut,
+                  items: [
+                    for (final t in ['BLUE', 'GREEN', 'RED', 'WHITE'])
+                      DropdownMenuItem(
+                        value: t,
+                        child: Text('Aquacoulisse Out: $t'),
+                      ),
+                  ],
+                  onChanged: (v) => setStateDialog(() => aqOut = v ?? ''),
+                  decoration: const InputDecoration(
+                    hintText: 'Aquacoulisse Out',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                // Parse and apply
+                tank = tankCtrl.text.trim();
+                gasIn = int.tryParse(gasInCtrl.text.trim());
+                gasOut = int.tryParse(gasOutCtrl.text.trim());
+                final int? idxIn = session['logIndexIn'] as int?;
+                final int? idxOut = session['logIndexOut'] as int?;
+                if (idxIn != null && idxIn >= 0 && idxIn < logsList.length) {
+                  final Map inLog = Map.from(logsList[idxIn] as Map);
+                  inLog['tag'] = tank;
+                  if (dtIn != null) inLog['datetime'] = dtIn!.toIso8601String();
+                  inLog['aquacoulisse'] = aqIn;
+                  inLog['gasIn'] = gasIn;
+                  logsList[idxIn] = inLog;
+                }
+                if (idxOut != null && idxOut >= 0 && idxOut < logsList.length) {
+                  final Map outLog = Map.from(logsList[idxOut] as Map);
+                  outLog['tag'] = tank;
+                  if (dtOut != null)
+                    outLog['datetime'] = dtOut!.toIso8601String();
+                  outLog['aquacoulisse'] = aqOut;
+                  outLog['gasOut'] = gasOut; // null => '? bar'
+                  logsList[idxOut] = outLog;
+                }
+                await logsBox.put('logsList', logsList);
+                if (mounted) setState(() {});
+                if (context.mounted) Navigator.pop(dialogCtx);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   void _openChangeTag(String name) async {
@@ -681,6 +911,24 @@ class _HistoryPageState extends State<HistoryPage> {
                             ),
                           ),
                           Expanded(
+                            child: Text(
+                              "Gas In:",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14 * scale,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              "Gas Out:",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14 * scale,
+                              ),
+                            ),
+                          ),
+                          Expanded(
                             flex: 2,
                             child: Text(
                               "Date and Time In:",
@@ -789,84 +1037,114 @@ class _HistoryPageState extends State<HistoryPage> {
                                 );
                                 final diveDur = (s['diveDuration'] ?? '')
                                     .toString();
-                                return Container(
-                                  padding: EdgeInsets.symmetric(
-                                    vertical: 8 * scale,
-                                    horizontal: 8 * scale,
+                                return InkWell(
+                                  onTap: () => _editSessionDialog(
+                                    Map<String, dynamic>.from(s),
                                   ),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        flex: 2,
-                                        child: Text(
-                                          s['name'] ?? "",
-                                          style: TextStyle(
-                                            fontSize:
-                                                (isPhone ? 14 : 17) * scale,
+                                  child: Container(
+                                    padding: EdgeInsets.symmetric(
+                                      vertical: 8 * scale,
+                                      horizontal: 8 * scale,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          flex: 2,
+                                          child: Text(
+                                            s['name'] ?? "",
+                                            style: TextStyle(
+                                              fontSize:
+                                                  (isPhone ? 14 : 17) * scale,
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                      Expanded(
-                                        child: Text(
-                                          statusText,
-                                          style: statusStyle,
-                                        ),
-                                      ),
-                                      Expanded(
-                                        child: Text(
-                                          (s['tag'] ?? '').toString(),
-                                          style: TextStyle(
-                                            fontSize:
-                                                (isPhone ? 14 : 17) * scale,
+                                        Expanded(
+                                          child: Text(
+                                            statusText,
+                                            style: statusStyle,
                                           ),
                                         ),
-                                      ),
-                                      Expanded(
-                                        flex: 2,
-                                        child: Text(dateStrIn, style: inStyle),
-                                      ),
-                                      Expanded(
-                                        flex: 2,
-                                        child: Text(
-                                          dateStrOut,
-                                          style: TextStyle(
-                                            fontSize:
-                                                (isPhone ? 14 : 17) * scale,
+                                        Expanded(
+                                          child: Text(
+                                            (s['tag'] ?? '').toString(),
+                                            style: TextStyle(
+                                              fontSize:
+                                                  (isPhone ? 14 : 17) * scale,
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                      Expanded(
-                                        child: Text(
-                                          diveDur,
-                                          style: TextStyle(
-                                            fontSize:
-                                                (isPhone ? 14 : 17) * scale,
+                                        Expanded(
+                                          child: Text(
+                                            s['gasIn'] == null
+                                                ? '-'
+                                                : '${s['gasIn']}bar',
+                                            style: TextStyle(
+                                              fontSize:
+                                                  (isPhone ? 14 : 17) * scale,
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                      Expanded(
-                                        child: Text(
-                                          (s['aquacoulisseIn'] ?? '')
-                                              .toString()
-                                              .toUpperCase(),
-                                          style: TextStyle(
-                                            fontSize:
-                                                (isPhone ? 14 : 17) * scale,
+                                        Expanded(
+                                          child: Text(
+                                            s['gasOut'] == null
+                                                ? '? bar'
+                                                : '${s['gasOut']}bar',
+                                            style: TextStyle(
+                                              fontSize:
+                                                  (isPhone ? 14 : 17) * scale,
+                                            ),
                                           ),
                                         ),
-                                      ),
-                                      Expanded(
-                                        child: Text(
-                                          (s['aquacoulisseOut'] ?? '')
-                                              .toString()
-                                              .toUpperCase(),
-                                          style: TextStyle(
-                                            fontSize:
-                                                (isPhone ? 14 : 17) * scale,
+                                        Expanded(
+                                          flex: 2,
+                                          child: Text(
+                                            dateStrIn,
+                                            style: inStyle,
                                           ),
                                         ),
-                                      ),
-                                    ],
+                                        Expanded(
+                                          flex: 2,
+                                          child: Text(
+                                            dateStrOut,
+                                            style: TextStyle(
+                                              fontSize:
+                                                  (isPhone ? 14 : 17) * scale,
+                                            ),
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: Text(
+                                            diveDur,
+                                            style: TextStyle(
+                                              fontSize:
+                                                  (isPhone ? 14 : 17) * scale,
+                                            ),
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: Text(
+                                            (s['aquacoulisseIn'] ?? '')
+                                                .toString()
+                                                .toUpperCase(),
+                                            style: TextStyle(
+                                              fontSize:
+                                                  (isPhone ? 14 : 17) * scale,
+                                            ),
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: Text(
+                                            (s['aquacoulisseOut'] ?? '')
+                                                .toString()
+                                                .toUpperCase(),
+                                            style: TextStyle(
+                                              fontSize:
+                                                  (isPhone ? 14 : 17) * scale,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 );
                               },

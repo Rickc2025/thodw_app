@@ -33,6 +33,9 @@ class _OperatorScreenState extends State<OperatorScreen> {
   String? selectedDepartmentFilter;
 
   final Set<String> selectedDivers = {}; // diver names (any department)
+  // Optional gas values per selected diver (bars). In: default 200 for OUT divers, Out: default null ('-').
+  final Map<String, int?> _gasIn = {}; // 0..250 or null
+  final Map<String, int?> _gasOut = {}; // 0..250 or null
   int currentlyIn = 0;
   Timer? _timer;
   final AudioPlayer _audioPlayer = AudioPlayer();
@@ -150,11 +153,231 @@ class _OperatorScreenState extends State<OperatorScreen> {
     );
   }
 
-  Future<void> _playConfirm() async {
-    try {
-      await _audioPlayer.play(AssetSource('sounds/pling.mp3'));
-    } catch (_) {}
+  Widget _buildSelectedPanel(bool isPhone, double scale) {
+    // in/out button sizes are computed inside the selected panel helper now
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          "Selected (${selectedDivers.length})",
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: (isPhone ? 20 : 22) * scale,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        SizedBox(height: 8 * scale),
+        Expanded(
+          child: selectedDivers.isEmpty
+              ? Center(
+                  child: Text(
+                    "Tap names to select.\nYou can switch teams/departments; selection stays.",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey[600]),
+                  ),
+                )
+              : SingleChildScrollView(
+                  scrollDirection: Axis.vertical,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
+                      columnSpacing: 8 * scale,
+                      horizontalMargin: 6 * scale,
+                      headingTextStyle: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
+                      columns: const [
+                        DataColumn(label: Text('Name:')),
+                        DataColumn(label: Text('Tank#:')),
+                        DataColumn(label: Text('Gas In:')),
+                        DataColumn(label: Text('Gas Out:')),
+                        DataColumn(label: Text('Status:')),
+                        DataColumn(label: Text('')),
+                      ],
+                      rows: [
+                        for (final name in selectedDivers.toList())
+                          DataRow(
+                            cells: [
+                              DataCell(
+                                SizedBox(
+                                  width: 120,
+                                  child: Text(
+                                    name,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                SizedBox(
+                                  width: 46,
+                                  child: Text(
+                                    checkedInTank(
+                                          name,
+                                        )?.toString().padLeft(2, '0') ??
+                                        '--',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                SizedBox(
+                                  width: 64,
+                                  child: InkWell(
+                                    onTap: () async {
+                                      final v = await _editGas(
+                                        context,
+                                        initial: _gasIn[name],
+                                        title: 'Gas In (bar)',
+                                      );
+                                      setState(() => _gasIn[name] = v);
+                                    },
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 6.0,
+                                      ),
+                                      child: Text(
+                                        _gasIn[name] == null
+                                            ? '-'
+                                            : '${_gasIn[name]}bar',
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          decoration: TextDecoration.underline,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                SizedBox(
+                                  width: 64,
+                                  child: InkWell(
+                                    onTap: () async {
+                                      final v = await _editGas(
+                                        context,
+                                        initial: _gasOut[name],
+                                        title: 'Gas Out (bar)',
+                                      );
+                                      setState(() => _gasOut[name] = v);
+                                    },
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 6.0,
+                                      ),
+                                      child: Text(
+                                        _gasOut[name] == null
+                                            ? '? bar'
+                                            : '${_gasOut[name]}bar',
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                          decoration: TextDecoration.underline,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                SizedBox(
+                                  width: 52,
+                                  child: Text(
+                                    diverIsInWater(name) ? 'In' : 'Out',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                SizedBox(
+                                  width: 28,
+                                  child: Center(
+                                    child: InkWell(
+                                      onTap: () => _toggleSelect(name),
+                                      child: const Icon(
+                                        Icons.close,
+                                        color: Colors.red,
+                                        size: 18,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+        ),
+        if (mixedSelection)
+          Padding(
+            padding: EdgeInsets.only(bottom: 8 * scale),
+            child: Text(
+              "Selection includes both IN and OUT divers.",
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.orange[700],
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: (isPhone ? 140 : 180) * scale,
+              height: (isPhone ? 56 : 68) * scale,
+              child: ElevatedButton(
+                onPressed: allSelectedAreOut ? _batchIn : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(36 * scale),
+                  ),
+                  textStyle: TextStyle(
+                    fontSize: (isPhone ? 20 : 22) * scale,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                child: const Text("IN"),
+              ),
+            ),
+            SizedBox(width: 26 * scale),
+            SizedBox(
+              width: (isPhone ? 140 : 180) * scale,
+              height: (isPhone ? 56 : 68) * scale,
+              child: ElevatedButton(
+                onPressed: allSelectedAreIn ? _batchOut : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(36 * scale),
+                  ),
+                  textStyle: TextStyle(
+                    fontSize: (isPhone ? 20 : 22) * scale,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                child: const Text("OUT"),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
   }
+
+  // Selection state helpers
+  bool get allSelectedAreIn =>
+      selectedDivers.isNotEmpty &&
+      selectedDivers.every((n) => diverIsInWater(n));
+  bool get allSelectedAreOut =>
+      selectedDivers.isNotEmpty &&
+      selectedDivers.every((n) => !diverIsInWater(n));
+  bool get mixedSelection =>
+      selectedDivers.isNotEmpty && !(allSelectedAreIn || allSelectedAreOut);
 
   void _toggleSelect(String name) {
     setState(() {
@@ -162,44 +385,87 @@ class _OperatorScreenState extends State<OperatorScreen> {
         selectedDivers.remove(name);
       } else {
         selectedDivers.add(name);
+        _gasIn.putIfAbsent(name, () => 200); // default
+        _gasOut.putIfAbsent(name, () => null); // unknown by default -> '? bar'
       }
     });
   }
 
-  bool get allSelectedAreOut =>
-      selectedDivers.isNotEmpty &&
-      selectedDivers.every((n) => !diverIsInWater(n));
+  Future<int?> _editGas(
+    BuildContext context, {
+    int? initial,
+    required String title,
+  }) async {
+    final controller = TextEditingController(
+      text: initial == null ? '' : initial.toString(),
+    );
+    // Preserve the original value unless the user explicitly saves a change.
+    int? result = initial;
+    await showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          title: Text(title),
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(hintText: '0 - 250 bar'),
+            maxLength: 3,
+          ),
+          actions: [
+            TextButton(
+              // Cancel -> keep existing value (do not clear to '-')
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final txt = controller.text.trim();
+                if (txt.isEmpty) {
+                  result = null;
+                } else {
+                  final val = int.tryParse(txt);
+                  if (val != null && val >= 0 && val <= 250) {
+                    result = val;
+                  } else {
+                    result = null; // invalid -> treat as null
+                  }
+                }
+                Navigator.pop(dialogCtx);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+    return result;
+  }
 
-  bool get allSelectedAreIn =>
-      selectedDivers.isNotEmpty &&
-      selectedDivers.every((n) => diverIsInWater(n));
-
-  bool get mixedSelection =>
-      selectedDivers.isNotEmpty && !(allSelectedAreOut || allSelectedAreIn);
+  Future<void> _playConfirm() async {
+    try {
+      await _audioPlayer.play(AssetSource('sounds/confirm.mp3'));
+    } catch (_) {}
+  }
 
   Future<void> _batchIn() async {
     if (!allSelectedAreOut) return;
     final logs = logsBox.get('logsList', defaultValue: <Map>[]);
     for (final name in selectedDivers) {
       final tag = checkedInTank(name);
-      if (tag == null) {
-        _snack("No tank for $name. Assign a tank from Log → Checked‑In.");
-        continue;
-      }
       logs.add({
         'name': name,
         'status': 'IN',
-        'tag': tag,
+        'tag': tag ?? '',
         'datetime': DateTime.now().toIso8601String(),
         'aquacoulisse': widget.aquacoulisse,
+        'gasIn': _gasIn[name],
       });
     }
     await logsBox.put('logsList', logs);
     await _playConfirm();
     _snack("Checked IN ${selectedDivers.length} diver(s).");
-    setState(() {
-      selectedDivers.clear();
-    });
+    setState(() => selectedDivers.clear());
   }
 
   Future<void> _batchOut() async {
@@ -213,6 +479,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
         'tag': lt ?? '',
         'datetime': DateTime.now().toIso8601String(),
         'aquacoulisse': widget.aquacoulisse,
+        'gasOut': _gasOut[name],
       });
     }
     await logsBox.put('logsList', logs);
@@ -240,12 +507,6 @@ class _OperatorScreenState extends State<OperatorScreen> {
     final crossAxisCount = isPhone ? 2 : 4;
     final childAspect = isPhone ? 1.8 : 2.45;
     final gridSpacing = 12.0 * scale;
-
-    final inOutButtonSize = Size(
-      (isPhone ? 140 : 180) * scale,
-      (isPhone ? 56 : 68) * scale,
-    );
-    final inOutTextSize = (isPhone ? 20 : 22) * scale;
 
     final showDiversMode = selectedDepartmentFilter == null;
 
@@ -590,131 +851,31 @@ class _OperatorScreenState extends State<OperatorScreen> {
                     child: Row(
                       children: [
                         Expanded(
-                          flex: 2,
+                          flex: MediaQuery.of(context).size.width < 1200
+                              ? 1
+                              : 2,
                           child: leftTiles.isEmpty
                               ? const SizedBox.shrink()
                               : leftTiles.first,
                         ),
                         Expanded(
                           flex: 1,
-                          child: Container(
-                            padding: EdgeInsets.symmetric(
-                              vertical: isPhone ? 12 * scale : 28 * scale,
-                              horizontal: 8 * scale,
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Text(
-                                  "Selected (${selectedDivers.length})",
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    fontSize: (isPhone ? 20 : 22) * scale,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                          child: LayoutBuilder(
+                            builder: (ctx, constraints) {
+                              return Container(
+                                // Use right margin to visually shift the panel left without clipping
+                                margin: EdgeInsets.only(
+                                  right: MediaQuery.of(context).size.width > 700
+                                      ? constraints.maxWidth * 0.01
+                                      : 0,
                                 ),
-                                SizedBox(height: 8 * scale),
-                                Expanded(
-                                  child: selectedDivers.isEmpty
-                                      ? Center(
-                                          child: Text(
-                                            "Tap names to select.\nYou can switch teams/departments; selection stays.",
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              color: Colors.grey[600],
-                                            ),
-                                          ),
-                                        )
-                                      : ListView(
-                                          children: [
-                                            for (final name
-                                                in selectedDivers.toList())
-                                              ListTile(
-                                                dense: true,
-                                                title: Text(
-                                                  name,
-                                                  style: const TextStyle(
-                                                    fontWeight: FontWeight.w600,
-                                                  ),
-                                                ),
-                                                subtitle: Text(
-                                                  "Tank ${checkedInTank(name)?.toString().padLeft(2, '0') ?? '--'} • ${diverIsInWater(name) ? 'IN' : 'OUT'}",
-                                                ),
-                                                trailing: IconButton(
-                                                  icon: const Icon(Icons.close),
-                                                  onPressed: () =>
-                                                      _toggleSelect(name),
-                                                ),
-                                              ),
-                                          ],
-                                        ),
+                                padding: EdgeInsets.symmetric(
+                                  vertical: isPhone ? 12 * scale : 28 * scale,
+                                  horizontal: 8 * scale,
                                 ),
-                                if (mixedSelection)
-                                  Padding(
-                                    padding: EdgeInsets.only(bottom: 8 * scale),
-                                    child: Text(
-                                      "Selection includes both IN and OUT divers.",
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        color: Colors.orange[700],
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    SizedBox(
-                                      width: inOutButtonSize.width,
-                                      height: inOutButtonSize.height,
-                                      child: ElevatedButton(
-                                        onPressed: allSelectedAreOut
-                                            ? _batchIn
-                                            : null,
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.black,
-                                          foregroundColor: Colors.white,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              36 * scale,
-                                            ),
-                                          ),
-                                          textStyle: TextStyle(
-                                            fontSize: inOutTextSize,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        child: const Text("IN"),
-                                      ),
-                                    ),
-                                    SizedBox(width: 26 * scale),
-                                    SizedBox(
-                                      width: inOutButtonSize.width,
-                                      height: inOutButtonSize.height,
-                                      child: ElevatedButton(
-                                        onPressed: allSelectedAreIn
-                                            ? _batchOut
-                                            : null,
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: Colors.black,
-                                          foregroundColor: Colors.white,
-                                          shape: RoundedRectangleBorder(
-                                            borderRadius: BorderRadius.circular(
-                                              36 * scale,
-                                            ),
-                                          ),
-                                          textStyle: TextStyle(
-                                            fontSize: inOutTextSize,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        child: const Text("OUT"),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
+                                child: _buildSelectedPanel(isPhone, scale),
+                              );
+                            },
                           ),
                         ),
                       ],
