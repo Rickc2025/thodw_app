@@ -848,37 +848,60 @@ class _OperatorScreenState extends State<OperatorScreen> {
                   if (showAnyFilters) SizedBox(height: 8 * scale),
 
                   Expanded(
-                    child: Row(
-                      children: [
-                        Expanded(
-                          flex: MediaQuery.of(context).size.width < 1200
-                              ? 1
-                              : 2,
-                          child: leftTiles.isEmpty
-                              ? const SizedBox.shrink()
-                              : leftTiles.first,
-                        ),
-                        Expanded(
-                          flex: 1,
-                          child: LayoutBuilder(
-                            builder: (ctx, constraints) {
-                              return Container(
-                                // Use right margin to visually shift the panel left without clipping
-                                margin: EdgeInsets.only(
-                                  right: MediaQuery.of(context).size.width > 700
-                                      ? constraints.maxWidth * 0.01
-                                      : 0,
+                    child: LayoutBuilder(
+                      builder: (ctx, outer) {
+                        // Build the right (Selected) panel once; center it within its space and constrain max width for large screens.
+                        Widget rightPanel = LayoutBuilder(
+                          builder: (ctx2, constraints) {
+                            return Center(
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  // Keep the table from stretching too wide on web desktops
+                                  maxWidth: constraints.maxWidth
+                                      .clamp(0, 640)
+                                      .toDouble(),
                                 ),
-                                padding: EdgeInsets.symmetric(
-                                  vertical: isPhone ? 12 * scale : 28 * scale,
-                                  horizontal: 8 * scale,
+                                child: Container(
+                                  padding: EdgeInsets.symmetric(
+                                    vertical: isPhone ? 12 * scale : 28 * scale,
+                                    horizontal: 8 * scale,
+                                  ),
+                                  child: _buildSelectedPanel(isPhone, scale),
                                 ),
-                                child: _buildSelectedPanel(isPhone, scale),
-                              );
-                            },
-                          ),
-                        ),
-                      ],
+                              ),
+                            );
+                          },
+                        );
+
+                        final screenW = MediaQuery.of(context).size.width;
+                        if (screenW < 700) {
+                          // On phones: stack vertically so the Selected table gets full width and sits below the tiles.
+                          return Column(
+                            children: [
+                              Expanded(
+                                child: leftTiles.isEmpty
+                                    ? const SizedBox.shrink()
+                                    : leftTiles.first,
+                              ),
+                              const Divider(height: 1),
+                              Expanded(child: rightPanel),
+                            ],
+                          );
+                        }
+
+                        // On tablets/desktop: two columns side‑by‑side with centered right panel; no magic margins.
+                        return Row(
+                          children: [
+                            Expanded(
+                              flex: screenW < 1200 ? 1 : 2,
+                              child: leftTiles.isEmpty
+                                  ? const SizedBox.shrink()
+                                  : leftTiles.first,
+                            ),
+                            Expanded(flex: 1, child: rightPanel),
+                          ],
+                        );
+                      },
                     ),
                   ),
                 ],
