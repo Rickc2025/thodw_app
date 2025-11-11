@@ -93,7 +93,11 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
     String trimmed = digits.replaceFirst(RegExp(r'^0+'), '');
     if (trimmed.isEmpty) {
       setState(() {
-        _tankController.text = '';
+        // Avoid modifying controller selection unexpectedly; clear safely
+        if (_tankController.text.isNotEmpty) {
+          _tankController.text = '';
+          _tankController.selection = const TextSelection.collapsed(offset: 0);
+        }
         selectedTag = null;
       });
       return;
@@ -101,7 +105,14 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
     if (trimmed.length > 3) trimmed = trimmed.substring(0, 3);
     final val = int.tryParse(trimmed);
     setState(() {
-      _tankController.text = trimmed;
+      // Only update the controller text if it actually changed to prevent
+      // caret jumping and character overwrite on some platforms (web/desktop).
+      if (_tankController.text != trimmed) {
+        _tankController.text = trimmed;
+        _tankController.selection = TextSelection.collapsed(
+          offset: _tankController.text.length,
+        );
+      }
       if (val == null || val < 1 || val > _maxTank) {
         selectedTag = null;
       } else {

@@ -87,7 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Builder(
               builder: (_) {
                 // User requested only the following static timestamp line
-                const text = 'Updated: 2025-11-11 at 04:50 PM';
+                const text = 'Updated: 2025-11-11 at 05:12 PM';
                 return Container(
                   padding: EdgeInsets.symmetric(
                     horizontal: 8 * scale,
