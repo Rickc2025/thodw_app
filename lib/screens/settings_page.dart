@@ -75,6 +75,11 @@ class _SettingsPageState extends State<SettingsPage> {
     final bool isEdit = diver != null;
     String oldName = isEdit ? (diver['name'] ?? '').toString() : '';
     String newName = isEdit ? oldName : '';
+    // Persist a single controller instance across dialog rebuilds so the
+    // typed name doesn't disappear when other controls trigger setState.
+    final TextEditingController nameController = TextEditingController(
+      text: isEdit ? newName : '',
+    );
     String selectedDepartment = isEdit
         ? (diver['department'] ?? '').toString()
         : (getDepartmentChoicesForAdd().isNotEmpty
@@ -102,9 +107,7 @@ class _SettingsPageState extends State<SettingsPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 TextField(
-                  controller: TextEditingController(
-                    text: isEdit ? newName : null,
-                  ),
+                  controller: nameController,
                   autofocus: !isEdit,
                   decoration: const InputDecoration(
                     labelText: 'Diver Name',
@@ -331,6 +334,43 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  void _showAbout() {
+    final scale = appScale(context);
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('About'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Text(
+              'AQX Dive Log App',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            SizedBox(height: 6),
+            Text(
+              'Version: 1.0.0',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            SizedBox(height: 2),
+            Text('Updated: 2025-11-28 at 02:40 AM'),
+            SizedBox(height: 10),
+            Text('Developed by: Ricardo Costa Silva'),
+            SizedBox(height: 6),
+            SelectableText('Contact: akosiricardocosta@gmail.com'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Close', style: TextStyle(fontSize: 14 * scale)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _toggleDark(bool value) {
     MyApp.of(context)?.toggleDarkMode(value);
     setState(() => darkMode = value);
@@ -406,6 +446,11 @@ class _SettingsPageState extends State<SettingsPage> {
                       ),
                     ),
                     const Spacer(),
+                    IconButton(
+                      tooltip: 'About',
+                      icon: Icon(Icons.info_outline, size: 26 * scale),
+                      onPressed: _showAbout,
+                    ),
                   ],
                 ),
                 SizedBox(height: 10 * scale),

@@ -43,7 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => const HistoryPage(selectedColor: "ALL"),
+        builder: (_) => const HistoryPage(selectedColor: "IN WATER"),
       ),
     );
   }
@@ -80,35 +80,6 @@ class _HomeScreenState extends State<HomeScreen> {
       body: Stack(
         children: [
           TopAlert(currentlyIn: currentlyIn, onTap: _openLog),
-          // Bottom-left static updated timestamp (single line)
-          Positioned(
-            left: 12 * scale,
-            bottom: 12 * scale,
-            child: Builder(
-              builder: (_) {
-                // User requested only the following static timestamp line
-                const text = 'Updated: 2025-11-11 at 05:12 PM';
-                return Container(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: 8 * scale,
-                    vertical: 6 * scale,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.55),
-                    borderRadius: BorderRadius.circular(6 * scale),
-                  ),
-                  child: Text(
-                    text,
-                    textAlign: TextAlign.left,
-                    style: TextStyle(
-                      fontSize: 11.5 * scale,
-                      color: Colors.black.withOpacity(0.65),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
           Positioned(
             top: topPad + 6 * scale,
             right: 12 * scale,

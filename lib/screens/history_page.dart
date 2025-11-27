@@ -39,6 +39,12 @@ class _HistoryPageState extends State<HistoryPage> {
   int currentlyIn = 0;
   Timer? _timer;
   late StreamSubscription<BoxEvent> _logsSub;
+  // Per-diver selected aquacoulisse color for quick IN shortcut (CHECKED-IN tab)
+  final Map<String, String?> _quickInColor =
+      {}; // values: BLUE, GREEN, RED, WHITE
+  // Per-diver selected aquacoulisse color for quick OUT shortcut (IN WATER tab)
+  final Map<String, String?> _quickOutColor =
+      {}; // values: BLUE, GREEN, RED, WHITE
 
   @override
   void initState() {
@@ -169,6 +175,64 @@ class _HistoryPageState extends State<HistoryPage> {
     });
 
     return filtered;
+  }
+
+  Future<void> _quickIn(String name, {int? tag, String? aquacoulisse}) async {
+    // Require a chosen aquacoulisse color before allowing quick IN.
+    if (aquacoulisse == null || aquacoulisse.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select color (B/G/R/W) first.')),
+      );
+      return;
+    }
+    // Add an IN log entry using current time, provided tag, chosen aquacoulisse
+    final logs = logsBox.get('logsList', defaultValue: <Map>[]);
+    logs.add({
+      'name': name,
+      'status': 'IN',
+      'tag': tag ?? '',
+      'datetime': DateTime.now().toIso8601String(),
+      'aquacoulisse': aquacoulisse.toString(),
+    });
+    await logsBox.put('logsList', logs);
+    if (mounted) setState(() {});
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Checked IN $name')));
+    }
+    // Clear selection so user must pick color again for next IN.
+    setState(() => _quickInColor[name] = null);
+  }
+
+  Future<void> _quickOut(String name, {int? tag, String? aquacoulisse}) async {
+    // Require a chosen aquacoulisse color before allowing quick OUT.
+    if (aquacoulisse == null || aquacoulisse.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select color (B/G/R/W) first.')),
+      );
+      return;
+    }
+    // Add an OUT log entry using current time, last IN tank if not provided
+    final logs = logsBox.get('logsList', defaultValue: <Map>[]);
+    final int? lt = tag ?? lastInTank(name);
+    logs.add({
+      'name': name,
+      'status': 'OUT',
+      'tag': lt ?? '',
+      'datetime': DateTime.now().toIso8601String(),
+      'aquacoulisse': aquacoulisse.toString(),
+      'gasOut': null,
+    });
+    await logsBox.put('logsList', logs);
+    if (mounted) setState(() {});
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Checked OUT $name')));
+    }
+    // Clear selection so user must pick color again for next OUT.
+    setState(() => _quickOutColor[name] = null);
   }
 
   List<Map> getLogsFiltered() => _sessionsForTab(tab);
@@ -780,6 +844,24 @@ class _HistoryPageState extends State<HistoryPage> {
                               ),
                             ),
                           ),
+                          Expanded(
+                            child: Text(
+                              "Shortcut",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14 * scale,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              "Shortcut",
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14 * scale,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -866,6 +948,132 @@ class _HistoryPageState extends State<HistoryPage> {
                                             ),
                                           ),
                                         ),
+                                        // Color selection shortcut buttons (B/G/R/W)
+                                        Expanded(
+                                          child: SizedBox(
+                                            height: 32 * scale,
+                                            child: Row(
+                                              children: [
+                                                for (final c in [
+                                                  ['BLUE', 'B', Colors.blue],
+                                                  ['GREEN', 'G', Colors.green],
+                                                  ['RED', 'R', Colors.red],
+                                                  ['WHITE', 'W', Colors.grey],
+                                                ])
+                                                  Padding(
+                                                    padding: EdgeInsets.only(
+                                                      right: 4 * scale,
+                                                    ),
+                                                    child: InkWell(
+                                                      onTap: waterIn
+                                                          ? null
+                                                          : () => setState(() {
+                                                              _quickInColor[name] =
+                                                                  c[0]
+                                                                      as String;
+                                                            }),
+                                                      child: AnimatedOpacity(
+                                                        duration:
+                                                            const Duration(
+                                                              milliseconds: 120,
+                                                            ),
+                                                        opacity: waterIn
+                                                            ? 0.25
+                                                            : (_quickInColor[name] ==
+                                                                      c[0]
+                                                                  ? 1.0
+                                                                  : 0.45),
+                                                        child: Container(
+                                                          width: 26 * scale,
+                                                          height: 26 * scale,
+                                                          decoration: BoxDecoration(
+                                                            shape:
+                                                                BoxShape.circle,
+                                                            color:
+                                                                (c[2] as Color)
+                                                                    .withOpacity(
+                                                                      0.95,
+                                                                    ),
+                                                            border:
+                                                                _quickInColor[name] ==
+                                                                    c[0]
+                                                                ? Border.all(
+                                                                    color: Colors
+                                                                        .black,
+                                                                    width: 2,
+                                                                  )
+                                                                : null,
+                                                          ),
+                                                          alignment:
+                                                              Alignment.center,
+                                                          child: Text(
+                                                            c[1] as String,
+                                                            style: TextStyle(
+                                                              fontSize:
+                                                                  12 * scale,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
+                                                              color:
+                                                                  c[0] ==
+                                                                      'WHITE'
+                                                                  ? Colors.black
+                                                                  : Colors
+                                                                        .white,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: Align(
+                                            alignment: Alignment.centerLeft,
+                                            child: (waterIn)
+                                                ? const SizedBox.shrink()
+                                                : SizedBox(
+                                                    height: 32 * scale,
+                                                    child: ElevatedButton(
+                                                      style: ElevatedButton.styleFrom(
+                                                        backgroundColor:
+                                                            _quickInColor[name] ==
+                                                                null
+                                                            ? Colors.black26
+                                                            : Colors.black,
+                                                        foregroundColor:
+                                                            Colors.white,
+                                                        shape:
+                                                            const StadiumBorder(),
+                                                        padding:
+                                                            EdgeInsets.symmetric(
+                                                              horizontal:
+                                                                  16 * scale,
+                                                            ),
+                                                      ),
+                                                      onPressed:
+                                                          _quickInColor[name] ==
+                                                              null
+                                                          ? null
+                                                          : () => _quickIn(
+                                                              name,
+                                                              tag: tag is int
+                                                                  ? tag
+                                                                  : int.tryParse(
+                                                                      (tag ?? '')
+                                                                          .toString(),
+                                                                    ),
+                                                              aquacoulisse:
+                                                                  _quickInColor[name],
+                                                            ),
+                                                      child: const Text('IN'),
+                                                    ),
+                                                  ),
+                                          ),
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -919,15 +1127,16 @@ class _HistoryPageState extends State<HistoryPage> {
                               ),
                             ),
                           ),
-                          Expanded(
-                            child: Text(
-                              "Gas Out:",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14 * scale,
+                          if (tab != "IN WATER")
+                            Expanded(
+                              child: Text(
+                                "Gas Out:",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14 * scale,
+                                ),
                               ),
                             ),
-                          ),
                           Expanded(
                             flex: 2,
                             child: Text(
@@ -938,25 +1147,27 @@ class _HistoryPageState extends State<HistoryPage> {
                               ),
                             ),
                           ),
-                          Expanded(
-                            flex: 2,
-                            child: Text(
-                              "Date and Time Out:",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14 * scale,
+                          if (tab != "IN WATER")
+                            Expanded(
+                              flex: 2,
+                              child: Text(
+                                "Date and Time Out:",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14 * scale,
+                                ),
                               ),
                             ),
-                          ),
-                          Expanded(
-                            child: Text(
-                              "Dive duration:",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14 * scale,
+                          if (tab != "IN WATER")
+                            Expanded(
+                              child: Text(
+                                "Dive duration:",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14 * scale,
+                                ),
                               ),
                             ),
-                          ),
                           Expanded(
                             child: Text(
                               "Aquacoulisse In:",
@@ -966,15 +1177,36 @@ class _HistoryPageState extends State<HistoryPage> {
                               ),
                             ),
                           ),
-                          Expanded(
-                            child: Text(
-                              "Aquacoulisse Out:",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14 * scale,
+                          if (tab == "IN WATER") ...[
+                            // Two shortcut columns (color select + OUT button)
+                            Expanded(
+                              child: Text(
+                                "Shortcut",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14 * scale,
+                                ),
                               ),
                             ),
-                          ),
+                            Expanded(
+                              child: Text(
+                                "Shortcut",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14 * scale,
+                                ),
+                              ),
+                            ),
+                          ] else
+                            Expanded(
+                              child: Text(
+                                "Aquacoulisse Out:",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14 * scale,
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -1046,104 +1278,283 @@ class _HistoryPageState extends State<HistoryPage> {
                                       vertical: 8 * scale,
                                       horizontal: 8 * scale,
                                     ),
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          flex: 2,
-                                          child: Text(
-                                            s['name'] ?? "",
-                                            style: TextStyle(
-                                              fontSize:
-                                                  (isPhone ? 14 : 17) * scale,
+                                    child: Builder(
+                                      builder: (_) {
+                                        final List<Widget> rowChildren = [
+                                          Expanded(
+                                            flex: 2,
+                                            child: Text(
+                                              s['name'] ?? "",
+                                              style: TextStyle(
+                                                fontSize:
+                                                    (isPhone ? 14 : 17) * scale,
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                        Expanded(
-                                          child: Text(
-                                            statusText,
-                                            style: statusStyle,
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: Text(
-                                            (s['tag'] ?? '').toString(),
-                                            style: TextStyle(
-                                              fontSize:
-                                                  (isPhone ? 14 : 17) * scale,
+                                          Expanded(
+                                            child: Text(
+                                              statusText,
+                                              style: statusStyle,
                                             ),
                                           ),
-                                        ),
-                                        Expanded(
-                                          child: Text(
-                                            s['gasIn'] == null
-                                                ? '-'
-                                                : '${s['gasIn']}bar',
-                                            style: TextStyle(
-                                              fontSize:
-                                                  (isPhone ? 14 : 17) * scale,
+                                          Expanded(
+                                            child: Text(
+                                              (s['tag'] ?? '').toString(),
+                                              style: TextStyle(
+                                                fontSize:
+                                                    (isPhone ? 14 : 17) * scale,
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                        Expanded(
-                                          child: Text(
-                                            s['gasOut'] == null
-                                                ? '? bar'
-                                                : '${s['gasOut']}bar',
-                                            style: TextStyle(
-                                              fontSize:
-                                                  (isPhone ? 14 : 17) * scale,
+                                          Expanded(
+                                            child: Text(
+                                              s['gasIn'] == null
+                                                  ? '-'
+                                                  : '${s['gasIn']}bar',
+                                              style: TextStyle(
+                                                fontSize:
+                                                    (isPhone ? 14 : 17) * scale,
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                        Expanded(
-                                          flex: 2,
-                                          child: Text(
-                                            dateStrIn,
-                                            style: inStyle,
-                                          ),
-                                        ),
-                                        Expanded(
-                                          flex: 2,
-                                          child: Text(
-                                            dateStrOut,
-                                            style: TextStyle(
-                                              fontSize:
-                                                  (isPhone ? 14 : 17) * scale,
+                                          if (tab != 'IN WATER')
+                                            Expanded(
+                                              child: Text(
+                                                s['gasOut'] == null
+                                                    ? '? bar'
+                                                    : '${s['gasOut']}bar',
+                                                style: TextStyle(
+                                                  fontSize:
+                                                      (isPhone ? 14 : 17) *
+                                                      scale,
+                                                ),
+                                              ),
+                                            ),
+                                          Expanded(
+                                            flex: 2,
+                                            child: Text(
+                                              dateStrIn,
+                                              style: inStyle,
                                             ),
                                           ),
-                                        ),
-                                        Expanded(
-                                          child: Text(
-                                            diveDur,
-                                            style: TextStyle(
-                                              fontSize:
-                                                  (isPhone ? 14 : 17) * scale,
+                                          if (tab != 'IN WATER')
+                                            Expanded(
+                                              flex: 2,
+                                              child: Text(
+                                                dateStrOut,
+                                                style: TextStyle(
+                                                  fontSize:
+                                                      (isPhone ? 14 : 17) *
+                                                      scale,
+                                                ),
+                                              ),
+                                            ),
+                                          if (tab != 'IN WATER')
+                                            Expanded(
+                                              child: Text(
+                                                diveDur,
+                                                style: TextStyle(
+                                                  fontSize:
+                                                      (isPhone ? 14 : 17) *
+                                                      scale,
+                                                ),
+                                              ),
+                                            ),
+                                          Expanded(
+                                            child: Text(
+                                              (s['aquacoulisseIn'] ?? '')
+                                                  .toString()
+                                                  .toUpperCase(),
+                                              style: TextStyle(
+                                                fontSize:
+                                                    (isPhone ? 14 : 17) * scale,
+                                              ),
                                             ),
                                           ),
-                                        ),
-                                        Expanded(
-                                          child: Text(
-                                            (s['aquacoulisseIn'] ?? '')
-                                                .toString()
-                                                .toUpperCase(),
-                                            style: TextStyle(
-                                              fontSize:
-                                                  (isPhone ? 14 : 17) * scale,
+                                        ];
+                                        if (tab == 'IN WATER') {
+                                          rowChildren.add(
+                                            Expanded(
+                                              child: SizedBox(
+                                                height: 32 * scale,
+                                                child: Row(
+                                                  children: [
+                                                    for (final c in [
+                                                      [
+                                                        'BLUE',
+                                                        'B',
+                                                        Colors.blue,
+                                                      ],
+                                                      [
+                                                        'GREEN',
+                                                        'G',
+                                                        Colors.green,
+                                                      ],
+                                                      ['RED', 'R', Colors.red],
+                                                      [
+                                                        'WHITE',
+                                                        'W',
+                                                        Colors.grey,
+                                                      ],
+                                                    ])
+                                                      Padding(
+                                                        padding:
+                                                            EdgeInsets.only(
+                                                              right: 4 * scale,
+                                                            ),
+                                                        child: InkWell(
+                                                          onTap: !isCurrIn
+                                                              ? null
+                                                              : () => setState(() {
+                                                                  _quickOutColor[(s['name'] ??
+                                                                              '')
+                                                                          .toString()] =
+                                                                      c[0]
+                                                                          as String;
+                                                                }),
+                                                          child: AnimatedOpacity(
+                                                            duration:
+                                                                const Duration(
+                                                                  milliseconds:
+                                                                      120,
+                                                                ),
+                                                            opacity: !isCurrIn
+                                                                ? 0.25
+                                                                : (_quickOutColor[(s['name'] ?? '')
+                                                                              .toString()] ==
+                                                                          c[0]
+                                                                      ? 1.0
+                                                                      : 0.45),
+                                                            child: Container(
+                                                              width: 26 * scale,
+                                                              height:
+                                                                  26 * scale,
+                                                              decoration: BoxDecoration(
+                                                                shape: BoxShape
+                                                                    .circle,
+                                                                color:
+                                                                    (c[2]
+                                                                            as Color)
+                                                                        .withOpacity(
+                                                                          0.95,
+                                                                        ),
+                                                                border:
+                                                                    _quickOutColor[(s['name'] ??
+                                                                                '')
+                                                                            .toString()] ==
+                                                                        c[0]
+                                                                    ? Border.all(
+                                                                        color: Colors
+                                                                            .black,
+                                                                        width:
+                                                                            2,
+                                                                      )
+                                                                    : null,
+                                                              ),
+                                                              alignment:
+                                                                  Alignment
+                                                                      .center,
+                                                              child: Text(
+                                                                c[1] as String,
+                                                                style: TextStyle(
+                                                                  fontSize:
+                                                                      12 *
+                                                                      scale,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .bold,
+                                                                  color:
+                                                                      c[0] ==
+                                                                          'WHITE'
+                                                                      ? Colors
+                                                                            .black
+                                                                      : Colors
+                                                                            .white,
+                                                                ),
+                                                              ),
+                                                            ),
+                                                          ),
+                                                        ),
+                                                      ),
+                                                  ],
+                                                ),
+                                              ),
                                             ),
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: Text(
-                                            (s['aquacoulisseOut'] ?? '')
-                                                .toString()
-                                                .toUpperCase(),
-                                            style: TextStyle(
-                                              fontSize:
-                                                  (isPhone ? 14 : 17) * scale,
+                                          );
+                                          rowChildren.add(
+                                            Expanded(
+                                              child: Align(
+                                                alignment: Alignment.centerLeft,
+                                                child: isCurrIn
+                                                    ? SizedBox(
+                                                        height: 32 * scale,
+                                                        child: ElevatedButton(
+                                                          style: ElevatedButton.styleFrom(
+                                                            backgroundColor:
+                                                                _quickOutColor[(s['name'] ??
+                                                                            '')
+                                                                        .toString()] ==
+                                                                    null
+                                                                ? Colors.black26
+                                                                : Colors.black,
+                                                            foregroundColor:
+                                                                Colors.white,
+                                                            shape:
+                                                                const StadiumBorder(),
+                                                            padding:
+                                                                EdgeInsets.symmetric(
+                                                                  horizontal:
+                                                                      16 *
+                                                                      scale,
+                                                                ),
+                                                          ),
+                                                          onPressed:
+                                                              _quickOutColor[(s['name'] ??
+                                                                          '')
+                                                                      .toString()] ==
+                                                                  null
+                                                              ? null
+                                                              : () => _quickOut(
+                                                                  (s['name'] ??
+                                                                          '')
+                                                                      .toString(),
+                                                                  tag: int.tryParse(
+                                                                    (s['tag'] ??
+                                                                            '')
+                                                                        .toString(),
+                                                                  ),
+                                                                  aquacoulisse:
+                                                                      _quickOutColor[(s['name'] ??
+                                                                              '')
+                                                                          .toString()],
+                                                                ),
+                                                          child: const Text(
+                                                            'OUT',
+                                                          ),
+                                                        ),
+                                                      )
+                                                    : const SizedBox.shrink(),
+                                              ),
                                             ),
-                                          ),
-                                        ),
-                                      ],
+                                          );
+                                        } else {
+                                          rowChildren.add(
+                                            Expanded(
+                                              child: Text(
+                                                (s['aquacoulisseOut'] ?? '')
+                                                    .toString()
+                                                    .toUpperCase(),
+                                                style: TextStyle(
+                                                  fontSize:
+                                                      (isPhone ? 14 : 17) *
+                                                      scale,
+                                                ),
+                                              ),
+                                            ),
+                                          );
+                                        }
+                                        return Row(children: rowChildren);
+                                      },
                                     ),
                                   ),
                                 );

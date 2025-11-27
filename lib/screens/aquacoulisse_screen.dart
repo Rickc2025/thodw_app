@@ -53,7 +53,7 @@ class _AquacoulisseScreenState extends State<AquacoulisseScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => const HistoryPage(selectedColor: "ALL"),
+        builder: (_) => const HistoryPage(selectedColor: "IN WATER"),
       ),
     );
   }
