@@ -31,6 +31,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
 
   // When a non-Show-Divers department is selected, this is set.
   String? selectedDepartmentFilter;
+  bool selectedAll = true; // default to show ALL checked-in divers
 
   final Set<String> selectedDivers = {}; // diver names (any department)
   // Optional gas values per selected diver (bars). In: default 200 for OUT divers, Out: default null ('-').
@@ -145,6 +146,21 @@ class _OperatorScreenState extends State<OperatorScreen> {
         .toList();
     deptNames.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return deptNames;
+  }
+
+  // All currently checked-in diver names (across all departments)
+  List<String> get allCheckedInNames {
+    final box = checkinsBox;
+    final List<String> names = [];
+    for (final key in box.keys) {
+      final data = (box.get(key) ?? {}) as Map;
+      if ((data['checkedIn'] ?? false) == true) {
+        final name = key.toString();
+        if (name.isNotEmpty) names.add(name);
+      }
+    }
+    names.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return names;
   }
 
   void _snack(String m) {
@@ -514,7 +530,96 @@ class _OperatorScreenState extends State<OperatorScreen> {
     final hasShowTeamButtons = availableTeams.isNotEmpty;
 
     final List<Widget> leftTiles = [];
-    if (showDiversMode) {
+    if (selectedAll) {
+      final names = allCheckedInNames;
+      if (names.isEmpty) {
+        leftTiles.add(
+          Center(
+            child: Text(
+              "No divers checked in.",
+              style: TextStyle(
+                fontSize: (isPhone ? 18 : 22) * scale,
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        );
+      } else {
+        leftTiles.add(
+          GridView.count(
+            crossAxisCount: crossAxisCount,
+            mainAxisSpacing: gridSpacing,
+            crossAxisSpacing: gridSpacing,
+            childAspectRatio: childAspect,
+            children: [
+              for (final name in names)
+                Builder(
+                  builder: (_) {
+                    final waterIn = diverIsInWater(name);
+                    final bool isSel = selectedDivers.contains(name);
+                    final int? tag = checkedInTank(name);
+                    // Use neutral color for ALL listing
+                    final Color bg = isSel ? Colors.green : Colors.blueGrey;
+                    return Stack(
+                      children: [
+                        ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            minimumSize: Size(120 * scale, 60 * scale),
+                            backgroundColor: bg,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(22 * scale),
+                            ),
+                            textStyle: TextStyle(
+                              fontSize: (isPhone ? 14 : 16) * scale,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            elevation: 0,
+                          ),
+                          onPressed: () => _toggleSelect(name),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              tag == null
+                                  ? name
+                                  : "$name  (Tank ${tag.toString().padLeft(2, '0')})",
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          right: 10,
+                          top: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: waterIn
+                                  ? Colors.orange[600]
+                                  : Colors.black54,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              waterIn ? "IN" : "OUT",
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+            ],
+          ),
+        );
+      }
+    } else if (showDiversMode) {
       final list = checkedInDiversForTeam;
       if (list.isEmpty) {
         leftTiles.add(
@@ -764,23 +869,53 @@ class _OperatorScreenState extends State<OperatorScreen> {
                       runSpacing: 6 * scale,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
+                        // ALL tab first
+                        ElevatedButton(
+                          onPressed: () {
+                            setState(() {
+                              selectedAll = true;
+                              selectedDepartmentFilter = null;
+                            });
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: selectedAll
+                                ? Colors.blueGrey[700]
+                                : Colors.grey[100],
+                            foregroundColor: selectedAll
+                                ? Colors.white
+                                : Colors.black,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(18 * scale),
+                            ),
+                            elevation: 0,
+                            minimumSize: Size(120 * scale, 48 * scale),
+                            textStyle: TextStyle(
+                              fontSize: 14 * scale,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          child: const Text('ALL'),
+                        ),
                         if (showTeamGroup)
                           for (final t in availableTeams)
                             ElevatedButton(
                               onPressed: () {
                                 setState(() {
+                                  selectedAll = false;
                                   selectedDepartmentFilter = null;
                                   selectedTeam = t;
                                 });
                               },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor:
-                                    (selectedDepartmentFilter == null &&
+                                    (!selectedAll &&
+                                        selectedDepartmentFilter == null &&
                                         selectedTeam == t)
                                     ? teamColor(t)
                                     : Colors.grey[100],
                                 foregroundColor:
-                                    (selectedDepartmentFilter == null &&
+                                    (!selectedAll &&
+                                        selectedDepartmentFilter == null &&
                                         selectedTeam == t)
                                     ? (t == "WHITE"
                                           ? Colors.black
@@ -818,6 +953,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                             ElevatedButton(
                               onPressed: () {
                                 setState(() {
+                                  selectedAll = false;
                                   selectedDepartmentFilter = dep;
                                 });
                               },
