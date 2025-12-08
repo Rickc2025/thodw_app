@@ -10,13 +10,7 @@ import '../widgets/top_alert.dart';
 import 'history_page.dart';
 
 class OperatorScreen extends StatefulWidget {
-  final String department;
-  final String aquacoulisse;
-  const OperatorScreen({
-    super.key,
-    required this.department,
-    required this.aquacoulisse,
-  });
+  const OperatorScreen({super.key});
 
   @override
   State<OperatorScreen> createState() => _OperatorScreenState();
@@ -474,7 +468,6 @@ class _OperatorScreenState extends State<OperatorScreen> {
         'status': 'IN',
         'tag': tag ?? '',
         'datetime': DateTime.now().toIso8601String(),
-        'aquacoulisse': widget.aquacoulisse,
         'gasIn': _gasIn[name],
       });
     }
@@ -494,7 +487,6 @@ class _OperatorScreenState extends State<OperatorScreen> {
         'status': 'OUT',
         'tag': lt ?? '',
         'datetime': DateTime.now().toIso8601String(),
-        'aquacoulisse': widget.aquacoulisse,
         'gasOut': _gasOut[name],
       });
     }
@@ -510,7 +502,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => HistoryPage(selectedColor: widget.aquacoulisse),
+        builder: (_) => const HistoryPage(selectedColor: "IN WATER"),
       ),
     );
   }
@@ -526,8 +518,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
 
     final showDiversMode = selectedDepartmentFilter == null;
 
-    final availableTeams = teamsWithCheckins;
-    final hasShowTeamButtons = availableTeams.isNotEmpty;
+    // Team color filters removed; only department filters and ALL remain.
 
     final List<Widget> leftTiles = [];
     if (selectedAll) {
@@ -625,9 +616,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
         leftTiles.add(
           Center(
             child: Text(
-              hasShowTeamButtons
-                  ? "No checked-in divers for this team."
-                  : "No divers checked in.",
+              "No divers checked in.",
               style: TextStyle(
                 fontSize: (isPhone ? 18 : 22) * scale,
                 color: Colors.grey[600],
@@ -650,9 +639,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                     final name = d['name'] as String;
                     final waterIn = diverIsInWater(name);
                     final bool isSel = selectedDivers.contains(name);
-                    final Color bg = isSel
-                        ? Colors.green
-                        : aquacoulisseColor(widget.aquacoulisse);
+                    final Color bg = isSel ? Colors.green : Colors.blueGrey;
                     final int? tag = checkedInTank(name);
                     return Stack(
                       children: [
@@ -803,7 +790,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
       }
     }
 
-    final showTeamGroup = hasShowTeamButtons;
+    final showTeamGroup = false;
     final showDeptGroup = nonShowDepartmentsWithCheckins.isNotEmpty;
     final showAnyFilters = showTeamGroup || showDeptGroup;
 
@@ -852,11 +839,11 @@ class _OperatorScreenState extends State<OperatorScreen> {
                   ),
                   SizedBox(height: 4 * scale),
                   Text(
-                    "${widget.department} - ${widget.aquacoulisse} AQUACOULISSE",
+                    "Deck Operator",
                     style: TextStyle(
                       fontSize: (isPhone ? 28 : 36) * scale,
                       fontWeight: FontWeight.bold,
-                      color: aquacoulisseColor(widget.aquacoulisse),
+                      color: Colors.blueGrey[700],
                       letterSpacing: 0.5,
                     ),
                     textAlign: TextAlign.center,
@@ -896,58 +883,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                           ),
                           child: const Text('ALL'),
                         ),
-                        if (showTeamGroup)
-                          for (final t in availableTeams)
-                            ElevatedButton(
-                              onPressed: () {
-                                setState(() {
-                                  selectedAll = false;
-                                  selectedDepartmentFilter = null;
-                                  selectedTeam = t;
-                                });
-                              },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor:
-                                    (!selectedAll &&
-                                        selectedDepartmentFilter == null &&
-                                        selectedTeam == t)
-                                    ? teamColor(t)
-                                    : Colors.grey[100],
-                                foregroundColor:
-                                    (!selectedAll &&
-                                        selectedDepartmentFilter == null &&
-                                        selectedTeam == t)
-                                    ? (t == "WHITE"
-                                          ? Colors.black
-                                          : Colors.white)
-                                    : Colors.black,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(
-                                    18 * scale,
-                                  ),
-                                ),
-                                elevation: 0,
-                                minimumSize: Size(120 * scale, 48 * scale),
-                                textStyle: TextStyle(
-                                  fontSize: 14 * scale,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              child: Text("$t TEAM"),
-                            ),
-                        if (showTeamGroup && showDeptGroup)
-                          Padding(
-                            padding: EdgeInsets.symmetric(
-                              horizontal: 8 * scale,
-                            ),
-                            child: Text(
-                              "•",
-                              style: TextStyle(
-                                fontSize: 20 * scale,
-                                color: Colors.grey[700],
-                              ),
-                            ),
-                          ),
+
                         if (showDeptGroup)
                           for (final dep in nonShowDepartmentsWithCheckins)
                             ElevatedButton(

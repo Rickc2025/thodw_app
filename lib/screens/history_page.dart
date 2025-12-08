@@ -26,25 +26,13 @@ class _HistoryPageState extends State<HistoryPage> {
   late Box logsBox;
   late Box checkinsBox;
   late Box diversBox;
-  late String tab; // "CHECKED-IN" or color or "ALL" or "IN WATER"
-  // Visible tabs (no ALL); IN WATER replaces old ALL quick filter.
-  final List<String> tabs = const [
-    "CHECKED-IN",
-    "BLUE",
-    "GREEN",
-    "RED",
-    "WHITE",
-    "IN WATER",
-  ];
+  late String tab; // "CHECKED-IN" or "IN WATER" or "ALL"
+  // Visible tabs after removing aquacoulisse colors.
+  final List<String> tabs = const ["CHECKED-IN", "IN WATER", "ALL"];
   int currentlyIn = 0;
   Timer? _timer;
   late StreamSubscription<BoxEvent> _logsSub;
-  // Per-diver selected aquacoulisse color for quick IN shortcut (CHECKED-IN tab)
-  final Map<String, String?> _quickInColor =
-      {}; // values: BLUE, GREEN, RED, WHITE
-  // Per-diver selected aquacoulisse color for quick OUT shortcut (IN WATER tab)
-  final Map<String, String?> _quickOutColor =
-      {}; // values: BLUE, GREEN, RED, WHITE
+  // No color shortcuts; aquacoulisse removed.
 
   @override
   void initState() {
@@ -89,12 +77,6 @@ class _HistoryPageState extends State<HistoryPage> {
     // Work with chronological order (oldest -> newest) to pair correctly.
     final List<Map> chronological = List<Map>.from(raw);
 
-    // Filter by aquacoulisse if needed (will match IN or OUT aquacoulisse).
-    bool filterByAq =
-        filterTab != "ALL" &&
-        filterTab != "CHECKED-IN" &&
-        filterTab != "IN WATER";
-
     // Build sessions per diver (ignore tank changes for pairing; store tank from IN).
     final Map<String, List<Map<String, dynamic>>> openStacks = {};
     final List<Map<String, dynamic>> sessions = [];
@@ -113,8 +95,6 @@ class _HistoryPageState extends State<HistoryPage> {
           'tag': (log['tag'] ?? '').toString(),
           'datetimeIn': dt.toIso8601String(),
           'datetimeOut': null,
-          'aquacoulisseIn': (log['aquacoulisse'] ?? '').toString(),
-          'aquacoulisseOut': null,
           'diveDuration': '',
           'gasIn': log['gasIn'],
           'gasOut': null,
@@ -131,7 +111,6 @@ class _HistoryPageState extends State<HistoryPage> {
           // Pair with the most recent unmatched IN.
           final last = stack.removeLast();
           last['datetimeOut'] = dt.toIso8601String();
-          last['aquacoulisseOut'] = (log['aquacoulisse'] ?? '').toString();
           last['gasOut'] = log['gasOut'];
           last['logIndexOut'] = i;
           final inDt = _tryParseDT(last['datetimeIn']);
@@ -150,14 +129,7 @@ class _HistoryPageState extends State<HistoryPage> {
       s['_isCurrentlyIn'] = currentlyIn;
     }
 
-    // Apply aquacoulisse filter (match either IN or OUT aquacoulisse).
-    List<Map<String, dynamic>> filtered = filterByAq
-        ? sessions.where((s) {
-            final inAq = (s['aquacoulisseIn'] ?? '').toString().toUpperCase();
-            final outAq = (s['aquacoulisseOut'] ?? '').toString().toUpperCase();
-            return inAq == filterTab || outAq == filterTab;
-          }).toList()
-        : sessions;
+    List<Map<String, dynamic>> filtered = sessions;
 
     // IN WATER filter: only sessions with no OUT yet
     if (filterTab == "IN WATER") {
@@ -177,22 +149,14 @@ class _HistoryPageState extends State<HistoryPage> {
     return filtered;
   }
 
-  Future<void> _quickIn(String name, {int? tag, String? aquacoulisse}) async {
-    // Require a chosen aquacoulisse color before allowing quick IN.
-    if (aquacoulisse == null || aquacoulisse.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Select color (B/G/R/W) first.')),
-      );
-      return;
-    }
-    // Add an IN log entry using current time, provided tag, chosen aquacoulisse
+  Future<void> _quickIn(String name, {int? tag}) async {
+    // Add an IN log entry using current time and provided tag
     final logs = logsBox.get('logsList', defaultValue: <Map>[]);
     logs.add({
       'name': name,
       'status': 'IN',
       'tag': tag ?? '',
       'datetime': DateTime.now().toIso8601String(),
-      'aquacoulisse': aquacoulisse.toString(),
     });
     await logsBox.put('logsList', logs);
     if (mounted) setState(() {});
@@ -201,18 +165,9 @@ class _HistoryPageState extends State<HistoryPage> {
         context,
       ).showSnackBar(SnackBar(content: Text('Checked IN $name')));
     }
-    // Clear selection so user must pick color again for next IN.
-    setState(() => _quickInColor[name] = null);
   }
 
-  Future<void> _quickOut(String name, {int? tag, String? aquacoulisse}) async {
-    // Require a chosen aquacoulisse color before allowing quick OUT.
-    if (aquacoulisse == null || aquacoulisse.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Select color (B/G/R/W) first.')),
-      );
-      return;
-    }
+  Future<void> _quickOut(String name, {int? tag}) async {
     // Add an OUT log entry using current time, last IN tank if not provided
     final logs = logsBox.get('logsList', defaultValue: <Map>[]);
     final int? lt = tag ?? lastInTank(name);
@@ -221,7 +176,6 @@ class _HistoryPageState extends State<HistoryPage> {
       'status': 'OUT',
       'tag': lt ?? '',
       'datetime': DateTime.now().toIso8601String(),
-      'aquacoulisse': aquacoulisse.toString(),
       'gasOut': null,
     });
     await logsBox.put('logsList', logs);
@@ -231,8 +185,6 @@ class _HistoryPageState extends State<HistoryPage> {
         context,
       ).showSnackBar(SnackBar(content: Text('Checked OUT $name')));
     }
-    // Clear selection so user must pick color again for next OUT.
-    setState(() => _quickOutColor[name] = null);
   }
 
   List<Map> getLogsFiltered() => _sessionsForTab(tab);
@@ -283,14 +235,6 @@ class _HistoryPageState extends State<HistoryPage> {
     switch (t) {
       case "CHECKED-IN":
         return Colors.teal[400];
-      case "BLUE":
-        return Colors.blue[300];
-      case "GREEN":
-        return Colors.green[400];
-      case "RED":
-        return Colors.red[400];
-      case "WHITE":
-        return Colors.grey[400];
       case "IN WATER":
         // Make selected IN WATER tab high-contrast (match alert orange tone)
         return Colors.orange[800];
@@ -303,7 +247,6 @@ class _HistoryPageState extends State<HistoryPage> {
 
   Color _tabTextColor(String t, bool selected) {
     if (!selected) return Colors.black;
-    if (t == "WHITE") return Colors.black;
     if (t == "IN WATER") return Colors.white; // ensure contrast on orange
     return Colors.white;
   }
@@ -367,7 +310,7 @@ class _HistoryPageState extends State<HistoryPage> {
     final sessions = getLogsFiltered();
     final buffer = StringBuffer();
     buffer.writeln(
-      "Name,Status,Tank,Gas In,Gas Out,DateTime In,DateTime Out,Aquacoulisse In,Aquacoulisse Out,DiveDuration",
+      "Name,Status,Tank,Gas In,Gas Out,DateTime In,DateTime Out,DiveDuration",
     );
     for (final s in sessions) {
       final name = _csvSafe(s['name']);
@@ -377,12 +320,8 @@ class _HistoryPageState extends State<HistoryPage> {
       final gasOut = _csvSafe(s['gasOut'] == null ? '' : '${s['gasOut']}bar');
       final dtIn = _csvSafe(s['datetimeIn']);
       final dtOut = _csvSafe(s['datetimeOut']);
-      final aqIn = _csvSafe(s['aquacoulisseIn']);
-      final aqOut = _csvSafe(s['aquacoulisseOut']);
       final dd = _csvSafe(s['diveDuration']);
-      buffer.writeln(
-        '$name,$status,$tag,$gasIn,$gasOut,$dtIn,$dtOut,$aqIn,$aqOut,$dd',
-      );
+      buffer.writeln('$name,$status,$tag,$gasIn,$gasOut,$dtIn,$dtOut,$dd');
     }
     await Exporter.saveCsv(_timestampBase(), buffer.toString());
   }
@@ -443,8 +382,6 @@ class _HistoryPageState extends State<HistoryPage> {
         "Gas Out",
         "DateTime In",
         "DateTime Out",
-        "Aquacoulisse In",
-        "Aquacoulisse Out",
         "DiveDuration",
       ];
       sb.write('<Row>');
@@ -463,8 +400,6 @@ class _HistoryPageState extends State<HistoryPage> {
           s['gasOut'] == null ? '' : '${s['gasOut']}bar',
           (s['datetimeIn'] ?? '').toString(),
           (s['datetimeOut'] ?? '').toString(),
-          (s['aquacoulisseIn'] ?? '').toString(),
-          (s['aquacoulisseOut'] ?? '').toString(),
           (s['diveDuration'] ?? '').toString(),
         ];
         sb.write('<Row>');
@@ -478,10 +413,7 @@ class _HistoryPageState extends State<HistoryPage> {
       sb.writeln('</Table></Worksheet>');
     }
 
-    addLogsSheet('BLUE', 'BLUE');
-    addLogsSheet('GREEN', 'GREEN');
-    addLogsSheet('RED', 'RED');
-    addLogsSheet('WHITE', 'WHITE');
+    addLogsSheet('IN WATER', 'IN WATER');
     addLogsSheet('ALL', 'ALL');
 
     sb.writeln('</Workbook>');
@@ -512,8 +444,6 @@ class _HistoryPageState extends State<HistoryPage> {
     int? gasOut = session['gasOut'] is int ? session['gasOut'] as int : null;
     DateTime? dtIn = _tryParseDT(session['datetimeIn']);
     DateTime? dtOut = _tryParseDT(session['datetimeOut']);
-    String aqIn = (session['aquacoulisseIn'] ?? '').toString().toUpperCase();
-    String aqOut = (session['aquacoulisseOut'] ?? '').toString().toUpperCase();
 
     final tankCtrl = TextEditingController(text: tank);
     final gasInCtrl = TextEditingController(text: gasIn?.toString() ?? '');
@@ -622,36 +552,7 @@ class _HistoryPageState extends State<HistoryPage> {
                     ),
                   ],
                 ),
-                const Divider(height: 20),
-                DropdownButtonFormField<String>(
-                  value: aqIn.isEmpty ? null : aqIn,
-                  items: [
-                    for (final t in ['BLUE', 'GREEN', 'RED', 'WHITE'])
-                      DropdownMenuItem(
-                        value: t,
-                        child: Text('Aquacoulisse In: $t'),
-                      ),
-                  ],
-                  onChanged: (v) => setStateDialog(() => aqIn = v ?? ''),
-                  decoration: const InputDecoration(
-                    hintText: 'Aquacoulisse In',
-                  ),
-                ),
-                const SizedBox(height: 8),
-                DropdownButtonFormField<String>(
-                  value: aqOut.isEmpty ? null : aqOut,
-                  items: [
-                    for (final t in ['BLUE', 'GREEN', 'RED', 'WHITE'])
-                      DropdownMenuItem(
-                        value: t,
-                        child: Text('Aquacoulisse Out: $t'),
-                      ),
-                  ],
-                  onChanged: (v) => setStateDialog(() => aqOut = v ?? ''),
-                  decoration: const InputDecoration(
-                    hintText: 'Aquacoulisse Out',
-                  ),
-                ),
+                // Aquacoulisse fields removed
               ],
             ),
           ),
@@ -672,7 +573,6 @@ class _HistoryPageState extends State<HistoryPage> {
                   final Map inLog = Map.from(logsList[idxIn] as Map);
                   inLog['tag'] = tank;
                   if (dtIn != null) inLog['datetime'] = dtIn!.toIso8601String();
-                  inLog['aquacoulisse'] = aqIn;
                   inLog['gasIn'] = gasIn;
                   logsList[idxIn] = inLog;
                 }
@@ -681,7 +581,6 @@ class _HistoryPageState extends State<HistoryPage> {
                   outLog['tag'] = tank;
                   if (dtOut != null)
                     outLog['datetime'] = dtOut!.toIso8601String();
-                  outLog['aquacoulisse'] = aqOut;
                   outLog['gasOut'] = gasOut; // null => '? bar'
                   logsList[idxOut] = outLog;
                 }
@@ -853,15 +752,6 @@ class _HistoryPageState extends State<HistoryPage> {
                               ),
                             ),
                           ),
-                          Expanded(
-                            child: Text(
-                              "Shortcut",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14 * scale,
-                              ),
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -948,88 +838,6 @@ class _HistoryPageState extends State<HistoryPage> {
                                             ),
                                           ),
                                         ),
-                                        // Color selection shortcut buttons (B/G/R/W)
-                                        Expanded(
-                                          child: SizedBox(
-                                            height: 32 * scale,
-                                            child: Row(
-                                              children: [
-                                                for (final c in [
-                                                  ['BLUE', 'B', Colors.blue],
-                                                  ['GREEN', 'G', Colors.green],
-                                                  ['RED', 'R', Colors.red],
-                                                  ['WHITE', 'W', Colors.grey],
-                                                ])
-                                                  Padding(
-                                                    padding: EdgeInsets.only(
-                                                      right: 4 * scale,
-                                                    ),
-                                                    child: InkWell(
-                                                      onTap: waterIn
-                                                          ? null
-                                                          : () => setState(() {
-                                                              _quickInColor[name] =
-                                                                  c[0]
-                                                                      as String;
-                                                            }),
-                                                      child: AnimatedOpacity(
-                                                        duration:
-                                                            const Duration(
-                                                              milliseconds: 120,
-                                                            ),
-                                                        opacity: waterIn
-                                                            ? 0.25
-                                                            : (_quickInColor[name] ==
-                                                                      c[0]
-                                                                  ? 1.0
-                                                                  : 0.45),
-                                                        child: Container(
-                                                          width: 26 * scale,
-                                                          height: 26 * scale,
-                                                          decoration: BoxDecoration(
-                                                            shape:
-                                                                BoxShape.circle,
-                                                            color:
-                                                                (c[2] as Color)
-                                                                    .withOpacity(
-                                                                      0.95,
-                                                                    ),
-                                                            border:
-                                                                _quickInColor[name] ==
-                                                                    c[0]
-                                                                ? Border.all(
-                                                                    color: Colors
-                                                                        .black,
-                                                                    width: 2,
-                                                                  )
-                                                                : null,
-                                                          ),
-                                                          alignment:
-                                                              Alignment.center,
-                                                          child: Text(
-                                                            c[1] as String,
-                                                            style: TextStyle(
-                                                              fontSize:
-                                                                  12 * scale,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .bold,
-                                                              color:
-                                                                  c[0] ==
-                                                                      'WHITE'
-                                                                  ? Colors.black
-                                                                  : Colors
-                                                                        .white,
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ),
-                                                  ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
                                         Expanded(
                                           child: Align(
                                             alignment: Alignment.centerLeft,
@@ -1040,10 +848,7 @@ class _HistoryPageState extends State<HistoryPage> {
                                                     child: ElevatedButton(
                                                       style: ElevatedButton.styleFrom(
                                                         backgroundColor:
-                                                            _quickInColor[name] ==
-                                                                null
-                                                            ? Colors.black26
-                                                            : Colors.black,
+                                                            Colors.black,
                                                         foregroundColor:
                                                             Colors.white,
                                                         shape:
@@ -1054,21 +859,15 @@ class _HistoryPageState extends State<HistoryPage> {
                                                                   16 * scale,
                                                             ),
                                                       ),
-                                                      onPressed:
-                                                          _quickInColor[name] ==
-                                                              null
-                                                          ? null
-                                                          : () => _quickIn(
-                                                              name,
-                                                              tag: tag is int
-                                                                  ? tag
-                                                                  : int.tryParse(
-                                                                      (tag ?? '')
-                                                                          .toString(),
-                                                                    ),
-                                                              aquacoulisse:
-                                                                  _quickInColor[name],
-                                                            ),
+                                                      onPressed: () => _quickIn(
+                                                        name,
+                                                        tag: tag is int
+                                                            ? tag
+                                                            : int.tryParse(
+                                                                (tag ?? '')
+                                                                    .toString(),
+                                                              ),
+                                                      ),
                                                       child: const Text('IN'),
                                                     ),
                                                   ),
@@ -1168,15 +967,7 @@ class _HistoryPageState extends State<HistoryPage> {
                                 ),
                               ),
                             ),
-                          Expanded(
-                            child: Text(
-                              "Aquacoulisse In:",
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14 * scale,
-                              ),
-                            ),
-                          ),
+                          // Aquacoulisse columns removed
                           if (tab == "IN WATER") ...[
                             // Two shortcut columns (color select + OUT button)
                             Expanded(
@@ -1188,25 +979,8 @@ class _HistoryPageState extends State<HistoryPage> {
                                 ),
                               ),
                             ),
-                            Expanded(
-                              child: Text(
-                                "Shortcut",
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14 * scale,
-                                ),
-                              ),
-                            ),
                           ] else
-                            Expanded(
-                              child: Text(
-                                "Aquacoulisse Out:",
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14 * scale,
-                                ),
-                              ),
-                            ),
+                            const SizedBox.shrink(),
                         ],
                       ),
                     ),
@@ -1360,127 +1134,9 @@ class _HistoryPageState extends State<HistoryPage> {
                                                 ),
                                               ),
                                             ),
-                                          Expanded(
-                                            child: Text(
-                                              (s['aquacoulisseIn'] ?? '')
-                                                  .toString()
-                                                  .toUpperCase(),
-                                              style: TextStyle(
-                                                fontSize:
-                                                    (isPhone ? 14 : 17) * scale,
-                                              ),
-                                            ),
-                                          ),
+                                          // Aquacoulisse In removed
                                         ];
                                         if (tab == 'IN WATER') {
-                                          rowChildren.add(
-                                            Expanded(
-                                              child: SizedBox(
-                                                height: 32 * scale,
-                                                child: Row(
-                                                  children: [
-                                                    for (final c in [
-                                                      [
-                                                        'BLUE',
-                                                        'B',
-                                                        Colors.blue,
-                                                      ],
-                                                      [
-                                                        'GREEN',
-                                                        'G',
-                                                        Colors.green,
-                                                      ],
-                                                      ['RED', 'R', Colors.red],
-                                                      [
-                                                        'WHITE',
-                                                        'W',
-                                                        Colors.grey,
-                                                      ],
-                                                    ])
-                                                      Padding(
-                                                        padding:
-                                                            EdgeInsets.only(
-                                                              right: 4 * scale,
-                                                            ),
-                                                        child: InkWell(
-                                                          onTap: !isCurrIn
-                                                              ? null
-                                                              : () => setState(() {
-                                                                  _quickOutColor[(s['name'] ??
-                                                                              '')
-                                                                          .toString()] =
-                                                                      c[0]
-                                                                          as String;
-                                                                }),
-                                                          child: AnimatedOpacity(
-                                                            duration:
-                                                                const Duration(
-                                                                  milliseconds:
-                                                                      120,
-                                                                ),
-                                                            opacity: !isCurrIn
-                                                                ? 0.25
-                                                                : (_quickOutColor[(s['name'] ?? '')
-                                                                              .toString()] ==
-                                                                          c[0]
-                                                                      ? 1.0
-                                                                      : 0.45),
-                                                            child: Container(
-                                                              width: 26 * scale,
-                                                              height:
-                                                                  26 * scale,
-                                                              decoration: BoxDecoration(
-                                                                shape: BoxShape
-                                                                    .circle,
-                                                                color:
-                                                                    (c[2]
-                                                                            as Color)
-                                                                        .withOpacity(
-                                                                          0.95,
-                                                                        ),
-                                                                border:
-                                                                    _quickOutColor[(s['name'] ??
-                                                                                '')
-                                                                            .toString()] ==
-                                                                        c[0]
-                                                                    ? Border.all(
-                                                                        color: Colors
-                                                                            .black,
-                                                                        width:
-                                                                            2,
-                                                                      )
-                                                                    : null,
-                                                              ),
-                                                              alignment:
-                                                                  Alignment
-                                                                      .center,
-                                                              child: Text(
-                                                                c[1] as String,
-                                                                style: TextStyle(
-                                                                  fontSize:
-                                                                      12 *
-                                                                      scale,
-                                                                  fontWeight:
-                                                                      FontWeight
-                                                                          .bold,
-                                                                  color:
-                                                                      c[0] ==
-                                                                          'WHITE'
-                                                                      ? Colors
-                                                                            .black
-                                                                      : Colors
-                                                                            .white,
-                                                                ),
-                                                              ),
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                  ],
-                                                ),
-                                              ),
-                                            ),
-                                          );
                                           rowChildren.add(
                                             Expanded(
                                               child: Align(
@@ -1491,12 +1147,7 @@ class _HistoryPageState extends State<HistoryPage> {
                                                         child: ElevatedButton(
                                                           style: ElevatedButton.styleFrom(
                                                             backgroundColor:
-                                                                _quickOutColor[(s['name'] ??
-                                                                            '')
-                                                                        .toString()] ==
-                                                                    null
-                                                                ? Colors.black26
-                                                                : Colors.black,
+                                                                Colors.black,
                                                             foregroundColor:
                                                                 Colors.white,
                                                             shape:
@@ -1508,47 +1159,23 @@ class _HistoryPageState extends State<HistoryPage> {
                                                                       scale,
                                                                 ),
                                                           ),
-                                                          onPressed:
-                                                              _quickOutColor[(s['name'] ??
-                                                                          '')
-                                                                      .toString()] ==
-                                                                  null
-                                                              ? null
-                                                              : () => _quickOut(
-                                                                  (s['name'] ??
+                                                          onPressed: () =>
+                                                              _quickOut(
+                                                                (s['name'] ??
+                                                                        '')
+                                                                    .toString(),
+                                                                tag: int.tryParse(
+                                                                  (s['tag'] ??
                                                                           '')
                                                                       .toString(),
-                                                                  tag: int.tryParse(
-                                                                    (s['tag'] ??
-                                                                            '')
-                                                                        .toString(),
-                                                                  ),
-                                                                  aquacoulisse:
-                                                                      _quickOutColor[(s['name'] ??
-                                                                              '')
-                                                                          .toString()],
                                                                 ),
+                                                              ),
                                                           child: const Text(
                                                             'OUT',
                                                           ),
                                                         ),
                                                       )
                                                     : const SizedBox.shrink(),
-                                              ),
-                                            ),
-                                          );
-                                        } else {
-                                          rowChildren.add(
-                                            Expanded(
-                                              child: Text(
-                                                (s['aquacoulisseOut'] ?? '')
-                                                    .toString()
-                                                    .toUpperCase(),
-                                                style: TextStyle(
-                                                  fontSize:
-                                                      (isPhone ? 14 : 17) *
-                                                      scale,
-                                                ),
                                               ),
                                             ),
                                           );

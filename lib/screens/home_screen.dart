@@ -5,10 +5,10 @@ import '../core/constants.dart';
 import '../core/utils.dart';
 import '../services/data_service.dart';
 import '../widgets/top_alert.dart';
-import 'aquacoulisse_screen.dart';
 import 'department_screen.dart';
 import 'history_page.dart';
 import 'settings_page.dart';
+import 'operator_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -59,7 +59,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (flow == FlowMode.operator) {
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => const AquacoulisseScreen()),
+        MaterialPageRoute(builder: (_) => const OperatorScreen()),
       );
     } else {
       Navigator.push(
