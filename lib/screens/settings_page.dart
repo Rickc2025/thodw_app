@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/state_cache.dart';
+import '../services/divers_service.dart';
 
 import '../core/constants.dart';
 import '../core/departments.dart';
 import '../core/utils.dart';
-import '../services/data_service.dart';
 import '../widgets/top_alert.dart';
 import '../app.dart';
 import 'history_page.dart';
@@ -21,6 +23,9 @@ class _SettingsPageState extends State<SettingsPage> {
   int currentlyIn = 0;
   Timer? _timer;
   bool darkMode = false;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _diversSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _checkinsSub;
+  List<Map<String, dynamic>> _divers = [];
 
   @override
   void initState() {
@@ -28,29 +33,47 @@ class _SettingsPageState extends State<SettingsPage> {
     diversBox = Hive.box('divers');
     darkMode = Hive.box('prefs').get('darkMode', defaultValue: false);
     _update();
+    _loadDivers();
+    _diversSub = FirebaseFirestore.instance
+        .collection('divers')
+        .snapshots()
+        .listen((_) => _loadDivers());
+    _checkinsSub = FirebaseFirestore.instance
+        .collection('checkins')
+        .snapshots()
+        .listen((_) => _update());
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _update());
   }
 
   Future<void> _update() async {
-    final c = await getCurrentlyInCount();
-    if (mounted) setState(() => currentlyIn = c);
+    if (mounted) setState(() => currentlyIn = StateCache.currentlyIn());
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _diversSub?.cancel();
+    _checkinsSub?.cancel();
     super.dispose();
   }
 
-  List<Map> get divers {
-    final stored = diversBox.get('diversList', defaultValue: <Map>[]);
-    final list = List<Map>.from(stored);
-    list.sort(
-      (a, b) => (a['name'] ?? '').toLowerCase().compareTo(
-        (b['name'] ?? '').toLowerCase(),
+  List<Map<String, dynamic>> get divers => _divers;
+
+  Future<void> _loadDivers() async {
+    try {
+      _divers = await DiversService.getDivers();
+    } catch (_) {
+      final stored = diversBox.get('diversList', defaultValue: <Map>[]);
+      _divers = List<Map>.from(
+        stored,
+      ).map((e) => Map<String, dynamic>.from(e)).toList();
+    }
+    _divers.sort(
+      (a, b) => (a['name'] ?? '').toString().toLowerCase().compareTo(
+        (b['name'] ?? '').toString().toLowerCase(),
       ),
     );
-    return list;
+    if (mounted) setState(() {});
   }
 
   void _snack(String msg) {
@@ -226,14 +249,16 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                   );
                   if (ok == true) {
-                    final arr = diversBox.get(
-                      'diversList',
-                      defaultValue: <Map>[],
-                    );
-                    final list = List<Map>.from(arr);
-                    list.removeWhere((d) => (d['name'] ?? '') == oldName);
-                    diversBox.put('diversList', list);
-                    checkinsBox.delete(oldName);
+                    // Do not allow removal if diver is currently in water.
+                    if (StateCache.diverIsInWater(oldName)) {
+                      _snack("Cannot remove diver who is currently IN WATER.");
+                      return;
+                    }
+                    await DiversService.removeDiver(oldName);
+                    // Firestore cascade handles check-ins; remove local legacy entry if present.
+                    try {
+                      checkinsBox.delete(oldName);
+                    } catch (_) {}
                     Navigator.pop(ctx);
                     setState(() {});
                     _snack('Diver removed.');
@@ -249,7 +274,7 @@ class _SettingsPageState extends State<SettingsPage> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
+              onPressed: () async {
                 if (newName.trim().isEmpty) {
                   _snack("Name can't be empty.");
                   return;
@@ -259,8 +284,7 @@ class _SettingsPageState extends State<SettingsPage> {
                   _snack("Select gas: Air or Nitrox.");
                   return;
                 }
-                final arr = diversBox.get('diversList', defaultValue: <Map>[]);
-                final list = List<Map>.from(arr);
+                final list = List<Map<String, dynamic>>.from(_divers);
                 if (isEdit) {
                   // Check duplicate name (excluding current diver)
                   if (list.any(
@@ -273,24 +297,32 @@ class _SettingsPageState extends State<SettingsPage> {
                     return;
                   }
                   // Update diver record
-                  for (int i = 0; i < list.length; i++) {
-                    if ((list[i]['name'] ?? '') == oldName) {
-                      list[i] = {
-                        'name': newName.trim(),
-                        'department': selectedDepartment,
-                        'team': selectedDepartment == 'SHOW DIVERS'
-                            ? selectedTeam
-                            : null,
-                        'gasAir': gasAir,
-                        'gasNitrox': gasNitrox,
-                        'gffm': gffm,
-                      };
-                      break;
-                    }
-                  }
-                  diversBox.put('diversList', list);
-                  // Migrate check-in key if name changed
+                  await DiversService.setDiver(newName.trim(), {
+                    'department': selectedDepartment,
+                    'team': selectedDepartment == 'SHOW DIVERS'
+                        ? selectedTeam
+                        : null,
+                    'gasAir': gasAir,
+                    'gasNitrox': gasNitrox,
+                    'gffm': gffm,
+                  });
+                  // Migrate check-in key if name changed (Firestore + legacy Hive if present)
                   if (oldName != newName.trim()) {
+                    final fs = FirebaseFirestore.instance;
+                    try {
+                      final oldDoc = await fs
+                          .collection('checkins')
+                          .doc(oldName)
+                          .get();
+                      if (oldDoc.exists) {
+                        final data = oldDoc.data() ?? {};
+                        await fs
+                            .collection('checkins')
+                            .doc(newName.trim())
+                            .set(data);
+                        await fs.collection('checkins').doc(oldName).delete();
+                      }
+                    } catch (_) {}
                     final data = checkinsBox.get(oldName);
                     if (data != null) {
                       checkinsBox.put(newName.trim(), data);
@@ -310,8 +342,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     _snack('Diver already exists.');
                     return;
                   }
-                  list.add({
-                    'name': newName.trim(),
+                  await DiversService.setDiver(newName.trim(), {
                     'department': selectedDepartment,
                     'team': selectedDepartment == 'SHOW DIVERS'
                         ? selectedTeam
@@ -320,7 +351,6 @@ class _SettingsPageState extends State<SettingsPage> {
                     'gasNitrox': gasNitrox,
                     'gffm': gffm,
                   });
-                  diversBox.put('diversList', list);
                   Navigator.pop(ctx);
                   setState(() {});
                   _snack('Diver added!');
@@ -354,7 +384,7 @@ class _SettingsPageState extends State<SettingsPage> {
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
             SizedBox(height: 2),
-            Text('Updated: 2025-11-28 at 02:40 AM'),
+            Text('Updated: 2025-12-08 at 08:38 AM'),
             SizedBox(height: 10),
             Text('Developed by: Ricardo Costa Silva'),
             SizedBox(height: 6),
@@ -371,9 +401,15 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  void _toggleDark(bool value) {
+  void _toggleDark(bool value) async {
     MyApp.of(context)?.toggleDarkMode(value);
     setState(() => darkMode = value);
+    Hive.box('prefs').put('darkMode', value);
+    try {
+      await FirebaseFirestore.instance.collection('prefs').doc('app').set({
+        'darkMode': value,
+      }, SetOptions(merge: true));
+    } catch (_) {}
   }
 
   void _resetCheckIns() {
@@ -393,7 +429,14 @@ class _SettingsPageState extends State<SettingsPage> {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text("Reset"),
             onPressed: () async {
-              await Hive.box('checkins').clear();
+              // Clear Firestore checkins collection
+              final coll = FirebaseFirestore.instance.collection('checkins');
+              final snap = await coll.get();
+              final batch = FirebaseFirestore.instance.batch();
+              for (final d in snap.docs) {
+                batch.delete(d.reference);
+              }
+              await batch.commit();
               if (context.mounted) {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(

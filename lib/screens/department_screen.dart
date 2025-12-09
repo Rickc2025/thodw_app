@@ -5,7 +5,8 @@ import '../core/constants.dart';
 import 'package:hive/hive.dart';
 import '../core/utils.dart';
 import '../core/navigation.dart';
-import '../services/data_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/state_cache.dart';
 import '../widgets/top_alert.dart';
 import 'checkin_names_screen2.dart';
 import 'history_page.dart';
@@ -22,21 +23,50 @@ class DepartmentScreen extends StatefulWidget {
 class _DepartmentScreenState extends State<DepartmentScreen> {
   int currentlyIn = 0;
   Timer? _timer;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _diversSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _checkinsSub;
+  List<Map<String, dynamic>> _diverList = [];
   @override
   void initState() {
     super.initState();
     _update();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _update());
+    _diversSub = FirebaseFirestore.instance
+        .collection('divers')
+        .snapshots()
+        .listen((snap) async {
+          try {
+            final remote = [
+              for (final d in snap.docs) {...d.data(), 'name': d.id},
+            ];
+            _diverList = remote
+                .map((e) => Map<String, dynamic>.from(e))
+                .toList();
+          } catch (_) {
+            final stored = Hive.box(
+              'divers',
+            ).get('diversList', defaultValue: <Map>[]);
+            _diverList = List<Map>.from(
+              stored,
+            ).map((e) => Map<String, dynamic>.from(e)).toList();
+          }
+          if (mounted) setState(() {});
+        });
+    _checkinsSub = FirebaseFirestore.instance
+        .collection('checkins')
+        .snapshots()
+        .listen((_) => _update());
   }
 
   Future<void> _update() async {
-    final c = await getCurrentlyInCount();
-    if (mounted) setState(() => currentlyIn = c);
+    if (mounted) setState(() => currentlyIn = StateCache.currentlyIn());
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _diversSub?.cancel();
+    _checkinsSub?.cancel();
     super.dispose();
   }
 
@@ -70,8 +100,11 @@ class _DepartmentScreenState extends State<DepartmentScreen> {
     final topPad = MediaQuery.of(context).padding.top;
     const modeTitle = "Check In";
     // Only list departments that actually have at least one diver configured.
-    final stored = Hive.box('divers').get('diversList', defaultValue: <Map>[]);
-    final diverList = List<Map>.from(stored);
+    final diverList = _diverList.isNotEmpty
+        ? _diverList
+        : List<Map>.from(
+            Hive.box('divers').get('diversList', defaultValue: <Map>[]),
+          ).map((e) => Map<String, dynamic>.from(e)).toList();
     final Set<String> depsWithDivers = {
       for (final d in diverList)
         if (((d['name'] ?? '').toString().isNotEmpty) &&

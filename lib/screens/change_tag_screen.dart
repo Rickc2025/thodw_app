@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../core/utils.dart';
-import '../services/data_service.dart';
-import 'package:hive/hive.dart';
+import '../services/state_cache.dart';
 
 class ChangeTagScreen extends StatefulWidget {
   final String diverName;
@@ -21,25 +20,29 @@ class _ChangeTagScreenState extends State<ChangeTagScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
   }
 
-  void _confirm() {
+  void _confirm() async {
     if (selectedTag == null) {
       _snack("Please enter a tank number.");
       return;
     }
-    if (tankInUse(selectedTag!, exceptName: widget.diverName)) {
+    if (await StateCache.tankInUse(
+      selectedTag!,
+      exceptName: widget.diverName,
+    )) {
       _snack(
         "Tank ${selectedTag!.toString().padLeft(2, '0')} is already in use.",
       );
       return;
     }
-    final box = Hive.box('checkins');
-    final data = (box.get(widget.diverName) ?? {}) as Map;
-    if ((data['checkedIn'] ?? false) != true) {
+    if (!StateCache.isCheckedIn(widget.diverName)) {
       _snack("Diver is not checked in.");
       return;
     }
-    data['tag'] = selectedTag!;
-    box.put(widget.diverName, data);
+    await StateCache.setCheckin(
+      widget.diverName,
+      checkedIn: true,
+      tag: selectedTag,
+    );
     Navigator.pop<int>(context, selectedTag);
   }
 

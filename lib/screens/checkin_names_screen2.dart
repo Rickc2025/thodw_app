@@ -2,11 +2,12 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hive/hive.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/constants.dart';
 import '../core/navigation.dart';
 import '../core/utils.dart';
-import '../services/data_service.dart';
+import '../services/state_cache.dart';
 import '../widgets/top_alert.dart';
 import 'history_page.dart';
 
@@ -31,6 +32,8 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
 
   int currentlyIn = 0;
   Timer? _timer;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _diversSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _checkinsSub;
 
   bool get isShowDivers => widget.department == 'SHOW DIVERS';
   bool get isOtherAggregated => widget.department == 'OTHER';
@@ -44,35 +47,80 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
     _loadDivers();
     _tick();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
+    // Live updates: listen to Firestore roster and checkins changes
+    _diversSub = FirebaseFirestore.instance
+        .collection('divers')
+        .snapshots()
+        .listen((_) {
+          _loadDivers();
+        });
+    _checkinsSub = FirebaseFirestore.instance
+        .collection('checkins')
+        .snapshots()
+        .listen((_) {
+          if (mounted) setState(() => currentlyIn = StateCache.currentlyIn());
+        });
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _diversSub?.cancel();
+    _checkinsSub?.cancel();
     _tankController.dispose();
     super.dispose();
   }
 
   Future<void> _tick() async {
-    final c = await getCurrentlyInCount();
-    if (mounted) setState(() => currentlyIn = c);
+    if (mounted) setState(() => currentlyIn = StateCache.currentlyIn());
   }
 
   void _loadDivers() {
     final stored = diversBox.get('diversList', defaultValue: <Map>[]);
-    final list = List<Map>.from(stored);
-    if (isOtherAggregated) {
-      if (selectedSubDepartment != null) {
-        divers = list
-            .where((d) => d['department'] == selectedSubDepartment)
-            .toList();
-      } else {
-        divers = [];
-      }
-    } else {
-      divers = list.where((d) => d['department'] == widget.department).toList();
-    }
-    setState(() {});
+    List<Map> list = List<Map>.from(stored);
+    // Try Firestore roster; if available, prefer it
+    FirebaseFirestore.instance
+        .collection('divers')
+        .get()
+        .then((snap) {
+          final remote = [
+            for (final d in snap.docs) {...d.data(), 'name': d.id},
+          ];
+          if (remote.isNotEmpty) {
+            list = remote.map((e) => Map<String, dynamic>.from(e)).toList();
+          }
+          if (isOtherAggregated) {
+            if (selectedSubDepartment != null) {
+              divers = list
+                  .where((d) => d['department'] == selectedSubDepartment)
+                  .toList();
+            } else {
+              divers = [];
+            }
+          } else {
+            divers = list
+                .where((d) => d['department'] == widget.department)
+                .toList();
+          }
+          if (mounted) setState(() {});
+        })
+        .catchError((_) {
+          // Fallback to Hive-only
+          if (isOtherAggregated) {
+            if (selectedSubDepartment != null) {
+              divers = list
+                  .where((d) => d['department'] == selectedSubDepartment)
+                  .toList();
+            } else {
+              divers = [];
+            }
+          } else {
+            divers = list
+                .where((d) => d['department'] == widget.department)
+                .toList();
+          }
+          if (mounted) setState(() {});
+        });
   }
 
   Map<String, int> _otherSubDepartmentCounts() {
@@ -140,26 +188,26 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
     });
   }
 
-  void _confirm() {
+  void _confirm() async {
     if (selectedDiver == null || selectedTag == null) {
       _snack('Please enter a tank number.');
       return;
     }
-    if (isCheckedIn(selectedDiver!)) {
+    if (StateCache.isCheckedIn(selectedDiver!)) {
       _snack('Already checked in. Change tank from Log → Checked‑In.');
       return;
     }
-    if (tankInUse(selectedTag!)) {
+    if (await StateCache.tankInUse(selectedTag!, exceptName: null)) {
       _snack(
         'Tank ${selectedTag!.toString().padLeft(2, '0')} is already in use.',
       );
       return;
     }
-    checkinsBox.put(selectedDiver!, {
-      'checkedIn': true,
-      'tag': selectedTag!,
-      'timestamp': DateTime.now().toIso8601String(),
-    });
+    await StateCache.setCheckin(
+      selectedDiver!,
+      checkedIn: true,
+      tag: selectedTag,
+    );
     _snack('Checked in!');
     _cancel();
   }

@@ -1,64 +1,81 @@
-import 'package:hive/hive.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
-// Logs/Checkins helpers backed by Hive
+// Logs/Checkins helpers backed by Firestore (shared across devices)
 
 Future<int> getCurrentlyInCount() async {
-  final logsBox = Hive.box('logs');
-  final logs = logsBox.get('logsList', defaultValue: <Map>[]);
-  final List<Map> logsList = List<Map>.from(logs);
-  final Map<String, Map> lastLogByDiverTag = {};
-  for (final log in logsList.reversed) {
-    final key = "${log['name'] ?? ''}|${log['tag'] ?? ''}";
-    if (!lastLogByDiverTag.containsKey(key)) {
-      lastLogByDiverTag[key] = log;
-    }
+  final db = FirebaseFirestore.instance;
+  // For each name+tag pair, consider last status; simpler approximation: count latest IN logs
+  final snap = await db
+      .collection('logs')
+      .orderBy('datetime', descending: true)
+      .get();
+  final Map<String, Map<String, dynamic>> lastLogByDiverTag = {};
+  for (final doc in snap.docs) {
+    final data = doc.data();
+    final key = "${data['name'] ?? ''}|${data['tag'] ?? ''}";
+    lastLogByDiverTag.putIfAbsent(key, () => data);
   }
   return lastLogByDiverTag.values
       .where((l) => (l['status'] ?? '') == 'IN')
       .length;
 }
 
-bool diverIsInWater(String name) {
-  final logsBox = Hive.box('logs');
-  final logs = logsBox.get('logsList', defaultValue: <Map>[]);
-  final list = List<Map>.from(logs);
-  final diverLogs = list.where((l) => l['name'] == name).toList();
-  if (diverLogs.isEmpty) return false;
-  return diverLogs.last['status'] == 'IN';
+Future<bool> diverIsInWater(String name) async {
+  final db = FirebaseFirestore.instance;
+  final snap = await db
+      .collection('logs')
+      .where('name', isEqualTo: name)
+      .orderBy('datetime', descending: true)
+      .limit(1)
+      .get();
+  if (snap.docs.isEmpty) return false;
+  return (snap.docs.first.data()['status'] ?? '') == 'IN';
 }
 
-int? lastInTank(String name) {
-  final logsBox = Hive.box('logs');
-  final logs = logsBox.get('logsList', defaultValue: <Map>[]);
-  for (final log in List<Map>.from(logs).reversed) {
-    if (log['name'] == name && log['status'] == 'IN') return log['tag'];
-  }
-  return null;
+Future<int?> lastInTank(String name) async {
+  final db = FirebaseFirestore.instance;
+  final snap = await db
+      .collection('logs')
+      .where('name', isEqualTo: name)
+      .where('status', isEqualTo: 'IN')
+      .orderBy('datetime', descending: true)
+      .limit(1)
+      .get();
+  if (snap.docs.isEmpty) return null;
+  final data = snap.docs.first.data();
+  final t = data['tag'];
+  return t is int ? t : int.tryParse('$t');
 }
 
-bool isCheckedIn(String name) {
-  final box = Hive.box('checkins');
-  final data = (box.get(name) ?? {}) as Map;
+Future<bool> isCheckedIn(String name) async {
+  final db = FirebaseFirestore.instance;
+  final doc = await db.collection('checkins').doc(name).get();
+  final data = doc.data() ?? {};
   return (data['checkedIn'] ?? false) == true;
 }
 
-int? checkedInTank(String name) {
-  final box = Hive.box('checkins');
-  final data = (box.get(name) ?? {}) as Map;
+Future<int?> checkedInTank(String name) async {
+  final db = FirebaseFirestore.instance;
+  final doc = await db.collection('checkins').doc(name).get();
+  final data = doc.data() ?? {};
   if (data.isEmpty) return null;
-  return data['tag'] is int ? data['tag'] : int.tryParse("${data['tag']}");
+  final t = data['tag'];
+  return t is int ? t : int.tryParse('$t');
 }
 
-bool tankInUse(int tag, {String? exceptName}) {
-  final box = Hive.box('checkins');
-  for (final key in box.keys) {
-    if (key == exceptName) continue;
-    final data = (box.get(key) ?? {}) as Map;
-    if ((data['checkedIn'] ?? false) == true) {
-      final t = data['tag'];
-      final val = t is int ? t : int.tryParse("$t");
-      if (val == tag) return true;
-    }
+Future<bool> tankInUse(int tag, {String? exceptName}) async {
+  final db = FirebaseFirestore.instance;
+  final snap = await db
+      .collection('checkins')
+      .where('checkedIn', isEqualTo: true)
+      .get();
+  for (final doc in snap.docs) {
+    final name = doc.id;
+    if (name == exceptName) continue;
+    final data = doc.data();
+    final t = data['tag'];
+    final val = t is int ? t : int.tryParse('$t');
+    if (val == tag) return true;
   }
   return false;
 }

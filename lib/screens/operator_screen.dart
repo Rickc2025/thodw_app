@@ -2,10 +2,11 @@ import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/constants.dart';
 import '../core/utils.dart';
-import '../services/data_service.dart';
+import '../services/state_cache.dart';
 import '../widgets/top_alert.dart';
 import 'history_page.dart';
 
@@ -18,8 +19,9 @@ class OperatorScreen extends StatefulWidget {
 
 class _OperatorScreenState extends State<OperatorScreen> {
   late Box diversBox;
-  late Box logsBox;
-  late Box checkinsBox;
+  late Box
+  logsBox; // roster-related logs kept only for legacy, will no longer be source of truth
+  late Box checkinsBox; // legacy local checkins (not authoritative)
   List<Map> divers = []; // SHOW DIVERS roster
   String selectedTeam = teams.first;
 
@@ -34,6 +36,24 @@ class _OperatorScreenState extends State<OperatorScreen> {
   int currentlyIn = 0;
   Timer? _timer;
   final AudioPlayer _audioPlayer = AudioPlayer();
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _diversSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _checkinsSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _logsSub;
+
+  Color _teamColor(String team) {
+    switch (team.toUpperCase()) {
+      case 'BLUE':
+        return Colors.blue;
+      case 'GREEN':
+        return Colors.green;
+      case 'RED':
+        return Colors.red;
+      case 'WHITE':
+        return Colors.white;
+      default:
+        return Colors.blueGrey;
+    }
+  }
 
   @override
   void initState() {
@@ -42,45 +62,70 @@ class _OperatorScreenState extends State<OperatorScreen> {
     logsBox = Hive.box('logs');
     checkinsBox = Hive.box('checkins');
     _loadDivers();
+    _diversSub = FirebaseFirestore.instance
+        .collection('divers')
+        .snapshots()
+        .listen((_) async {
+          await _loadDivers();
+        });
+    _checkinsSub = FirebaseFirestore.instance
+        .collection('checkins')
+        .snapshots()
+        .listen((_) {
+          if (mounted) setState(() => currentlyIn = StateCache.currentlyIn());
+        });
+    _logsSub = FirebaseFirestore.instance.collection('logs').snapshots().listen(
+      (_) {
+        if (mounted) setState(() {});
+      },
+    );
     _tick();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
   }
 
-  void _loadDivers() {
-    final stored = diversBox.get('diversList', defaultValue: <Map>[]);
-    final list = List<Map>.from(stored);
-    divers = list.where((d) => d['department'] == "SHOW DIVERS").toList();
-    setState(() {});
+  Future<void> _loadDivers() async {
+    try {
+      final snap = await FirebaseFirestore.instance.collection('divers').get();
+      final remote = [
+        for (final d in snap.docs) {...d.data(), 'name': d.id},
+      ];
+      final list = remote.isNotEmpty
+          ? remote.map((e) => Map<String, dynamic>.from(e)).toList()
+          : List<Map>.from(diversBox.get('diversList', defaultValue: <Map>[]));
+      divers = list;
+    } catch (_) {
+      final stored = diversBox.get('diversList', defaultValue: <Map>[]);
+      final list = List<Map>.from(stored);
+      divers = list;
+    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _tick() async {
-    final c = await getCurrentlyInCount();
-    if (mounted) setState(() => currentlyIn = c);
+    if (mounted) setState(() => currentlyIn = StateCache.currentlyIn());
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _diversSub?.cancel();
+    _checkinsSub?.cancel();
+    _logsSub?.cancel();
     super.dispose();
   }
 
   // TEAMS that have at least one checked-in diver (for SHOW DIVERS only)
   List<String> get teamsWithCheckins {
     final Set<String> teamsSet = {};
-    for (final key in checkinsBox.keys) {
-      final data = (checkinsBox.get(key) ?? {}) as Map;
-      if ((data['checkedIn'] ?? false) == true) {
-        final list = List<Map>.from(
-          diversBox.get('diversList', defaultValue: <Map>[]),
-        );
-        final match = list.firstWhere(
-          (d) => (d['name'] ?? '') == key,
-          orElse: () => {},
-        );
-        if ((match['department'] ?? '') == "SHOW DIVERS") {
-          final t = (match['team'] ?? '').toString().toUpperCase();
-          if (t.isNotEmpty) teamsSet.add(t);
-        }
+    for (final name in StateCache.checkedInNames()) {
+      final list = divers;
+      final match = list.firstWhere(
+        (d) => (d['name'] ?? '') == name,
+        orElse: () => {},
+      );
+      if ((match['department'] ?? '') == "SHOW DIVERS") {
+        final t = (match['team'] ?? '').toString().toUpperCase();
+        if (t.isNotEmpty) teamsSet.add(t);
       }
     }
     return [
@@ -95,14 +140,15 @@ class _OperatorScreenState extends State<OperatorScreen> {
         ? selectedTeam
         : (available.isNotEmpty ? available.first : selectedTeam);
 
-    final teamDivers = divers.where((d) => (d['team'] ?? '') == useTeam);
-    return teamDivers.where((d) => isCheckedIn(d['name'])).toList();
+    final showDivers = divers.where(
+      (d) => (d['department'] ?? '') == "SHOW DIVERS",
+    );
+    final teamDivers = showDivers.where((d) => (d['team'] ?? '') == useTeam);
+    return teamDivers.where((d) => StateCache.isCheckedIn(d['name'])).toList();
   }
 
   String? _departmentForName(String name) {
-    final list = List<Map>.from(
-      diversBox.get('diversList', defaultValue: <Map>[]),
-    );
+    final list = divers;
     for (final d in list) {
       if ((d['name'] ?? '') == name) return d['department'];
     }
@@ -110,15 +156,11 @@ class _OperatorScreenState extends State<OperatorScreen> {
   }
 
   List<String> get nonShowDepartmentsWithCheckins {
-    final box = checkinsBox;
     final Set<String> depts = {};
-    for (final key in box.keys) {
-      final data = (box.get(key) ?? {}) as Map;
-      if ((data['checkedIn'] ?? false) == true) {
-        final dept = _departmentForName(key as String);
-        if (dept != null && dept != "SHOW DIVERS") {
-          depts.add(dept);
-        }
+    for (final name in StateCache.checkedInNames()) {
+      final dept = _departmentForName(name);
+      if (dept != null && dept != "SHOW DIVERS") {
+        depts.add(dept);
       }
     }
     final ordered = [
@@ -130,13 +172,11 @@ class _OperatorScreenState extends State<OperatorScreen> {
 
   List<String> get checkedInNamesForSelectedDepartment {
     if (selectedDepartmentFilter == null) return [];
-    final list = List<Map>.from(
-      diversBox.get('diversList', defaultValue: <Map>[]),
-    );
+    final list = divers;
     final deptNames = list
         .where((d) => d['department'] == selectedDepartmentFilter)
         .map((d) => (d['name'] ?? '').toString())
-        .where((n) => n.isNotEmpty && isCheckedIn(n))
+        .where((n) => n.isNotEmpty && StateCache.isCheckedIn(n))
         .toList();
     deptNames.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return deptNames;
@@ -144,17 +184,8 @@ class _OperatorScreenState extends State<OperatorScreen> {
 
   // All currently checked-in diver names (across all departments)
   List<String> get allCheckedInNames {
-    final box = checkinsBox;
-    final List<String> names = [];
-    for (final key in box.keys) {
-      final data = (box.get(key) ?? {}) as Map;
-      if ((data['checkedIn'] ?? false) == true) {
-        final name = key.toString();
-        if (name.isNotEmpty) names.add(name);
-      }
-    }
-    names.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    return names;
+    // Source from StateCache checkins map to avoid roster dependency
+    return StateCache.checkedInNames();
   }
 
   void _snack(String m) {
@@ -222,7 +253,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                                 SizedBox(
                                   width: 46,
                                   child: Text(
-                                    checkedInTank(
+                                    StateCache.checkedInTank(
                                           name,
                                         )?.toString().padLeft(2, '0') ??
                                         '--',
@@ -292,7 +323,9 @@ class _OperatorScreenState extends State<OperatorScreen> {
                                 SizedBox(
                                   width: 52,
                                   child: Text(
-                                    diverIsInWater(name) ? 'In' : 'Out',
+                                    StateCache.diverIsInWater(name)
+                                        ? 'In'
+                                        : 'Out',
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
@@ -382,10 +415,10 @@ class _OperatorScreenState extends State<OperatorScreen> {
   // Selection state helpers
   bool get allSelectedAreIn =>
       selectedDivers.isNotEmpty &&
-      selectedDivers.every((n) => diverIsInWater(n));
+      selectedDivers.every((n) => StateCache.diverIsInWater(n));
   bool get allSelectedAreOut =>
       selectedDivers.isNotEmpty &&
-      selectedDivers.every((n) => !diverIsInWater(n));
+      selectedDivers.every((n) => !StateCache.diverIsInWater(n));
   bool get mixedSelection =>
       selectedDivers.isNotEmpty && !(allSelectedAreIn || allSelectedAreOut);
 
@@ -460,18 +493,20 @@ class _OperatorScreenState extends State<OperatorScreen> {
 
   Future<void> _batchIn() async {
     if (!allSelectedAreOut) return;
-    final logs = logsBox.get('logsList', defaultValue: <Map>[]);
+    final now = DateTime.now().toIso8601String();
+    final payload = <Map<String, dynamic>>[];
     for (final name in selectedDivers) {
-      final tag = checkedInTank(name);
-      logs.add({
+      final tag = StateCache.checkedInTank(name);
+      payload.add({
         'name': name,
         'status': 'IN',
         'tag': tag ?? '',
-        'datetime': DateTime.now().toIso8601String(),
+        'datetime': now,
         'gasIn': _gasIn[name],
       });
+      await StateCache.setCheckin(name, checkedIn: true, tag: tag);
     }
-    await logsBox.put('logsList', logs);
+    await StateCache.addLogs(payload);
     await _playConfirm();
     _snack("Checked IN ${selectedDivers.length} diver(s).");
     setState(() => selectedDivers.clear());
@@ -479,18 +514,22 @@ class _OperatorScreenState extends State<OperatorScreen> {
 
   Future<void> _batchOut() async {
     if (!allSelectedAreIn) return;
-    final logs = logsBox.get('logsList', defaultValue: <Map>[]);
+    final now = DateTime.now().toIso8601String();
+    final payload = <Map<String, dynamic>>[];
     for (final name in selectedDivers) {
-      final lt = lastInTank(name);
-      logs.add({
+      final tag = StateCache.checkedInTank(name);
+      payload.add({
         'name': name,
         'status': 'OUT',
-        'tag': lt ?? '',
-        'datetime': DateTime.now().toIso8601String(),
+        'tag': tag ?? '',
+        'datetime': now,
         'gasOut': _gasOut[name],
       });
+      // Do not uncheck from deck when sending OUT of water.
+      // Keep the diver checked-in with the same tag.
+      await StateCache.setCheckin(name, checkedIn: true, tag: tag);
     }
-    await logsBox.put('logsList', logs);
+    await StateCache.addLogs(payload);
     await _playConfirm();
     _snack("Checked OUT ${selectedDivers.length} diver(s).");
     setState(() {
@@ -547,9 +586,9 @@ class _OperatorScreenState extends State<OperatorScreen> {
               for (final name in names)
                 Builder(
                   builder: (_) {
-                    final waterIn = diverIsInWater(name);
+                    final waterIn = StateCache.diverIsInWater(name);
                     final bool isSel = selectedDivers.contains(name);
-                    final int? tag = checkedInTank(name);
+                    final int? tag = StateCache.checkedInTank(name);
                     // Use neutral color for ALL listing
                     final Color bg = isSel ? Colors.green : Colors.blueGrey;
                     return Stack(
@@ -637,10 +676,10 @@ class _OperatorScreenState extends State<OperatorScreen> {
                 Builder(
                   builder: (_) {
                     final name = d['name'] as String;
-                    final waterIn = diverIsInWater(name);
+                    final waterIn = StateCache.diverIsInWater(name);
                     final bool isSel = selectedDivers.contains(name);
                     final Color bg = isSel ? Colors.green : Colors.blueGrey;
-                    final int? tag = checkedInTank(name);
+                    final int? tag = StateCache.checkedInTank(name);
                     return Stack(
                       children: [
                         ElevatedButton(
@@ -724,9 +763,9 @@ class _OperatorScreenState extends State<OperatorScreen> {
               for (final name in names)
                 Builder(
                   builder: (_) {
-                    final waterIn = diverIsInWater(name);
+                    final waterIn = StateCache.diverIsInWater(name);
                     final bool isSel = selectedDivers.contains(name);
-                    final int? tag = checkedInTank(name);
+                    final int? tag = StateCache.checkedInTank(name);
                     final Color bg = isSel
                         ? Colors.green
                         : Colors.blueGrey; // neutral
@@ -790,7 +829,8 @@ class _OperatorScreenState extends State<OperatorScreen> {
       }
     }
 
-    final showTeamGroup = false;
+    final availableTeams = teamsWithCheckins;
+    final showTeamGroup = availableTeams.isNotEmpty;
     final showDeptGroup = nonShowDepartmentsWithCheckins.isNotEmpty;
     final showAnyFilters = showTeamGroup || showDeptGroup;
 
@@ -883,6 +923,58 @@ class _OperatorScreenState extends State<OperatorScreen> {
                           ),
                           child: const Text('ALL'),
                         ),
+
+                        if (showTeamGroup)
+                          for (final t in availableTeams)
+                            Builder(
+                              builder: (context) {
+                                final bool isSelected =
+                                    (!selectedAll &&
+                                    selectedDepartmentFilter == null &&
+                                    selectedTeam == t);
+                                final Color teamBg = isSelected
+                                    ? _teamColor(t)
+                                    : (Colors.grey[100]!);
+                                final Color teamFg = isSelected
+                                    ? (t.toUpperCase() == 'WHITE'
+                                          ? Colors.black
+                                          : Colors.white)
+                                    : Colors.black;
+                                return ElevatedButton(
+                                  onPressed: () {
+                                    setState(() {
+                                      selectedAll = false;
+                                      selectedDepartmentFilter = null;
+                                      selectedTeam = t;
+                                    });
+                                  },
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: teamBg,
+                                    foregroundColor: teamFg,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(
+                                        18 * scale,
+                                      ),
+                                    ),
+                                    elevation: 0,
+                                    side: isSelected
+                                        ? BorderSide(
+                                            color: t.toUpperCase() == 'WHITE'
+                                                ? Colors.black26
+                                                : teamBg,
+                                            width: 1.2,
+                                          )
+                                        : BorderSide.none,
+                                    minimumSize: Size(120 * scale, 48 * scale),
+                                    textStyle: TextStyle(
+                                      fontSize: 14 * scale,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  child: Text("${t.toUpperCase()} TEAM"),
+                                );
+                              },
+                            ),
 
                         if (showDeptGroup)
                           for (final dep in nonShowDepartmentsWithCheckins)
