@@ -145,15 +145,24 @@ class _HistoryPageState extends State<HistoryPage> {
       filtered = filtered.where((s) => (s['datetimeOut'] == null)).toList();
     }
 
-    // Sort: currently in first, then by In datetime desc.
-    filtered.sort((a, b) {
-      final ai = (a['_isCurrentlyIn'] ?? false) ? 1 : 0;
-      final bi = (b['_isCurrentlyIn'] ?? false) ? 1 : 0;
-      if (ai != bi) return bi - ai;
-      final ad = _tryParseDT(a['datetimeIn']) ?? DateTime(1970);
-      final bd = _tryParseDT(b['datetimeIn']) ?? DateTime(1970);
-      return bd.compareTo(ad);
-    });
+    // Sort: for IN WATER tab show alphabetical; otherwise show by recency.
+    if (filterTab == "IN WATER") {
+      filtered.sort(
+        (a, b) => (a['name'] as String).toLowerCase().compareTo(
+          (b['name'] as String).toLowerCase(),
+        ),
+      );
+    } else {
+      // currently in first, then by In datetime desc
+      filtered.sort((a, b) {
+        final ai = (a['_isCurrentlyIn'] ?? false) ? 1 : 0;
+        final bi = (b['_isCurrentlyIn'] ?? false) ? 1 : 0;
+        if (ai != bi) return bi - ai;
+        final ad = _tryParseDT(a['datetimeIn']) ?? DateTime(1970);
+        final bd = _tryParseDT(b['datetimeIn']) ?? DateTime(1970);
+        return bd.compareTo(ad);
+      });
+    }
 
     return filtered;
   }

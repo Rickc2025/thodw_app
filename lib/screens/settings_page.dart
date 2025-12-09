@@ -418,7 +418,7 @@ class _SettingsPageState extends State<SettingsPage> {
       builder: (_) => AlertDialog(
         title: const Text("New Day Reset"),
         content: const Text(
-          "This will clear today's CHECKED‑IN list.\nWater IN/OUT logs will NOT be affected.",
+          "This will clear today's CHECKED‑IN list (not IN WATER).\nDivers currently IN WATER will remain checked‑in and carry over.",
         ),
         actions: [
           TextButton(
@@ -429,12 +429,14 @@ class _SettingsPageState extends State<SettingsPage> {
             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
             child: const Text("Reset"),
             onPressed: () async {
-              // Clear Firestore checkins collection
+              // Clear only those checked‑in who are NOT currently IN WATER
               final coll = FirebaseFirestore.instance.collection('checkins');
-              final snap = await coll.get();
+              final names = StateCache.checkedInNames();
               final batch = FirebaseFirestore.instance.batch();
-              for (final d in snap.docs) {
-                batch.delete(d.reference);
+              for (final name in names) {
+                if (!StateCache.diverIsInWater(name)) {
+                  batch.delete(coll.doc(name));
+                }
               }
               await batch.commit();
               if (context.mounted) {
@@ -532,7 +534,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               'New Day Reset (Checked‑In only)',
                               style: TextStyle(fontSize: 16 * scale),
                             ),
-                            onPressed: currentlyIn > 0 ? null : _resetCheckIns,
+                            onPressed: _resetCheckIns,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.red[600],
                               foregroundColor: Colors.white,
@@ -575,17 +577,7 @@ class _SettingsPageState extends State<SettingsPage> {
                     ],
                   ),
                 ),
-                if (currentlyIn > 0)
-                  Padding(
-                    padding: EdgeInsets.only(top: 6 * scale),
-                    child: Text(
-                      'Reset is blocked while any diver is IN.',
-                      style: TextStyle(
-                        color: Colors.red[700],
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
+                // Reset is always allowed; divers currently IN WATER are preserved.
                 SizedBox(height: 12 * scale),
                 SizedBox(height: 12 * scale),
                 Padding(
