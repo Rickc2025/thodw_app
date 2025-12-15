@@ -30,13 +30,19 @@ class StateCache {
     _logsSub?.cancel();
 
     _checkinsSub = db.collection('checkins').snapshots().listen((snap) {
+      // Rebuild entire check-ins map from snapshot to reflect deletions
+      final Map<String, Map<String, dynamic>> next = {};
       for (final d in snap.docs) {
         final data = d.data();
-        _checkins[d.id] = {
+        next[d.id] = {
           'checkedIn': (data['checkedIn'] ?? false) == true,
           'tag': _parseInt(data['tag']),
+          'timestamp': (data['timestamp'] ?? '').toString(),
         };
       }
+      _checkins
+        ..clear()
+        ..addAll(next);
     });
 
     // Keep only last log per name|tag
@@ -92,6 +98,12 @@ class StateCache {
   static int? checkedInTank(String name) {
     final m = _instance._checkins[name];
     return m?['tag'] as int?;
+  }
+
+  static String? checkedInTimestamp(String name) {
+    final m = _instance._checkins[name];
+    final ts = (m?['timestamp'] ?? '').toString();
+    return ts.isEmpty ? null : ts;
   }
 
   static bool diverIsInWater(String name) {
@@ -165,12 +177,23 @@ class StateCache {
     int? tag,
   }) async {
     // Optimistically update local cache so UI reflects immediately
-    _instance._checkins[name] = {'checkedIn': checkedIn, 'tag': tag};
+    final prev = _instance._checkins[name] ?? {};
+    final String prevTs = (prev['timestamp'] ?? '').toString();
+    // If marking checkedIn true and there is no timestamp, set now; if updating tag only, preserve timestamp.
+    final String ts = checkedIn
+        ? (prevTs.isEmpty ? DateTime.now().toIso8601String() : prevTs)
+        : prevTs;
+    _instance._checkins[name] = {
+      'checkedIn': checkedIn,
+      'tag': tag,
+      'timestamp': ts,
+    };
     // Persist to Firestore
     final doc = _instance.db.collection('checkins').doc(name);
     await doc.set({
       'checkedIn': checkedIn,
       'tag': tag,
+      'timestamp': ts,
     }, SetOptions(merge: true));
   }
 

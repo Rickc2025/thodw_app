@@ -252,12 +252,41 @@ class _OperatorScreenState extends State<OperatorScreen> {
                               DataCell(
                                 SizedBox(
                                   width: 46,
-                                  child: Text(
-                                    StateCache.checkedInTank(
+                                  child: InkWell(
+                                    onTap: () async {
+                                      // Prevent changing tank while diver is IN WATER
+                                      if (StateCache.diverIsInWater(name)) {
+                                        _snack(
+                                          "Cannot change tank while diver is IN WATER.",
+                                        );
+                                        return;
+                                      }
+                                      final currentTag =
+                                          StateCache.checkedInTank(name);
+                                      final newTag = await _editTagNumber(
+                                        context,
+                                        initial: currentTag,
+                                        title: 'Tank number',
+                                      );
+                                      if (newTag != null) {
+                                        await StateCache.setCheckin(
                                           name,
-                                        )?.toString().padLeft(2, '0') ??
-                                        '--',
-                                    overflow: TextOverflow.ellipsis,
+                                          checkedIn: true,
+                                          tag: newTag,
+                                        );
+                                        if (mounted) setState(() {});
+                                      }
+                                    },
+                                    child: Text(
+                                      StateCache.checkedInTank(
+                                            name,
+                                          )?.toString().padLeft(2, '0') ??
+                                          '--',
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        decoration: TextDecoration.underline,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -473,6 +502,51 @@ class _OperatorScreenState extends State<OperatorScreen> {
                   } else {
                     result = null; // invalid -> treat as null
                   }
+                }
+                Navigator.pop(dialogCtx);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+    return result;
+  }
+
+  Future<int?> _editTagNumber(
+    BuildContext context, {
+    int? initial,
+    required String title,
+  }) async {
+    final controller = TextEditingController(
+      text: initial == null ? '' : initial.toString(),
+    );
+    int? result = initial;
+    await showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          title: Text(title),
+          content: TextField(
+            controller: controller,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(hintText: 'Tank # (0 - 99)'),
+            maxLength: 2,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final txt = controller.text.trim();
+                final val = int.tryParse(txt);
+                if (val != null && val >= 0 && val <= 99) {
+                  result = val;
+                } else {
+                  result = null;
                 }
                 Navigator.pop(dialogCtx);
               },

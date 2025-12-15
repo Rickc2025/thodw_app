@@ -215,7 +215,7 @@ class _HistoryPageState extends State<HistoryPage> {
         arr.add({
           'name': name,
           'tag': StateCache.checkedInTank(name),
-          'timestamp': null,
+          'timestamp': StateCache.checkedInTimestamp(name),
           'waterIn': StateCache.diverIsInWater(name),
           'department': _departmentFor(name),
         });
@@ -326,18 +326,17 @@ class _HistoryPageState extends State<HistoryPage> {
     final sessions = getLogsFiltered();
     final buffer = StringBuffer();
     buffer.writeln(
-      "Name,Status,Tank,Gas In,Gas Out,DateTime In,DateTime Out,DiveDuration",
+      "Name,Tank,Gas In,Gas Out,DateTime In,DateTime Out,DiveDuration",
     );
     for (final s in sessions) {
       final name = _csvSafe(s['name']);
-      final status = _csvSafe((s['datetimeOut'] == null) ? 'IN' : 'OUT');
       final tag = _csvSafe(s['tag']?.toString());
       final gasIn = _csvSafe(s['gasIn'] == null ? '' : '${s['gasIn']}bar');
       final gasOut = _csvSafe(s['gasOut'] == null ? '' : '${s['gasOut']}bar');
       final dtIn = _csvSafe(s['datetimeIn']);
       final dtOut = _csvSafe(s['datetimeOut']);
       final dd = _csvSafe(s['diveDuration']);
-      buffer.writeln('$name,$status,$tag,$gasIn,$gasOut,$dtIn,$dtOut,$dd');
+      buffer.writeln('$name,$tag,$gasIn,$gasOut,$dtIn,$dtOut,$dd');
     }
     await Exporter.saveCsv(_timestampBase(), buffer.toString());
   }
@@ -355,7 +354,7 @@ class _HistoryPageState extends State<HistoryPage> {
     {
       final list = getCheckedInList();
       sb.writeln('<Worksheet ss:Name="Checked-in"><Table>');
-      final headers = ["Name", "Tank", "Water", "Checked‑In at"];
+      final headers = ["Name", "Tank", "Checked‑In at"];
       sb.write('<Row>');
       for (final h in headers) {
         sb.write('<Cell><Data ss:Type="String">${_xmlEscape(h)}</Data></Cell>');
@@ -365,7 +364,6 @@ class _HistoryPageState extends State<HistoryPage> {
       for (final item in list) {
         final name = (item['name'] ?? '').toString();
         final tag = (item['tag'] ?? '').toString();
-        final water = (item['waterIn'] ?? false) ? 'IN' : 'OUT';
         String dateStr = '';
         try {
           final dt = DateTime.parse(item['timestamp'] ?? "");
@@ -373,7 +371,7 @@ class _HistoryPageState extends State<HistoryPage> {
               "${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} "
               "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
         } catch (_) {}
-        final row = [name, tag, water, dateStr];
+        final row = [name, tag, dateStr];
         sb.write('<Row>');
         for (final cell in row) {
           sb.write(
@@ -392,7 +390,6 @@ class _HistoryPageState extends State<HistoryPage> {
 
       final headers = [
         "Name",
-        "Status",
         "Tank",
         "Gas In",
         "Gas Out",
@@ -407,10 +404,8 @@ class _HistoryPageState extends State<HistoryPage> {
       sb.writeln('</Row>');
 
       for (final s in sessions) {
-        final status = (s['datetimeOut'] == null) ? 'IN' : 'OUT';
         final row = [
           (s['name'] ?? '').toString(),
-          status,
           (s['tag'] ?? '').toString(),
           s['gasIn'] == null ? '' : '${s['gasIn']}bar',
           s['gasOut'] == null ? '' : '${s['gasOut']}bar',
@@ -429,7 +424,6 @@ class _HistoryPageState extends State<HistoryPage> {
       sb.writeln('</Table></Worksheet>');
     }
 
-    addLogsSheet('IN WATER', 'IN WATER');
     addLogsSheet('ALL', 'ALL');
 
     sb.writeln('</Workbook>');
