@@ -86,20 +86,22 @@ class _HistoryPageState extends State<HistoryPage> {
     // Pull logs from Firestore snapshot synchronously from cached sessions built below.
     final chronological = _firestoreLogsChronological;
 
-    // Build sessions per diver (ignore tank changes for pairing; store tank from IN).
+    // Build sessions per diverId (ignore tank changes for pairing; store tank from IN).
     final Map<String, List<Map<String, dynamic>>> openStacks = {};
     final List<Map<String, dynamic>> sessions = [];
 
     for (int i = 0; i < chronological.length; i++) {
       final log = chronological[i];
-      final name = (log['name'] ?? '').toString();
-      if (name.isEmpty) continue;
+      final diverId = (log['diverId'] ?? '').toString();
+      if (diverId.isEmpty) continue; // require diverId in new schema
+      final String name = (log['name'] ?? '').toString();
       final status = (log['status'] ?? '').toString().toUpperCase();
       final dt = _tryParseDT(log['datetime']);
       if (dt == null) continue;
 
       if (status == 'IN') {
         final session = <String, dynamic>{
+          'diverId': diverId,
           'name': name,
           'tag': (log['tag'] ?? '').toString(),
           'datetimeIn': dt.toIso8601String(),
@@ -111,11 +113,11 @@ class _HistoryPageState extends State<HistoryPage> {
           'logIndexOut': null,
         };
         openStacks
-            .putIfAbsent(name, () => <Map<String, dynamic>>[])
+            .putIfAbsent(diverId, () => <Map<String, dynamic>>[])
             .add(session);
         sessions.add(session);
       } else if (status == 'OUT') {
-        final stack = openStacks[name];
+        final stack = openStacks[diverId];
         if (stack != null && stack.isNotEmpty) {
           // Pair with the most recent unmatched IN.
           final last = stack.removeLast();
@@ -167,28 +169,43 @@ class _HistoryPageState extends State<HistoryPage> {
     return filtered;
   }
 
-  Future<void> _quickIn(String name, {int? tag}) async {
+  Future<void> _quickInById(
+    String diverId,
+    String displayName, {
+    int? tag,
+  }) async {
     final now = DateTime.now().toIso8601String();
     await StateCache.addLogs([
-      {'name': name, 'status': 'IN', 'tag': tag ?? '', 'datetime': now},
+      {
+        'diverId': diverId,
+        'name': displayName,
+        'status': 'IN',
+        'tag': tag ?? '',
+        'datetime': now,
+      },
     ]);
-    await StateCache.setCheckin(name, checkedIn: true, tag: tag);
+    await StateCache.setCheckin(diverId, checkedIn: true, tag: tag);
     // Refresh local caches immediately so UI updates without manual refresh
     _refreshCaches();
     if (mounted) setState(() {});
     if (context.mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Checked IN $name')));
+      ).showSnackBar(SnackBar(content: Text('Checked IN $displayName')));
     }
   }
 
-  Future<void> _quickOut(String name, {int? tag}) async {
+  Future<void> _quickOutById(
+    String diverId,
+    String displayName, {
+    int? tag,
+  }) async {
     final now = DateTime.now().toIso8601String();
-    final int? lt = tag ?? StateCache.checkedInTank(name);
+    final int? lt = tag ?? StateCache.checkedInTank(diverId);
     await StateCache.addLogs([
       {
-        'name': name,
+        'diverId': diverId,
+        'name': displayName,
         'status': 'OUT',
         'tag': lt ?? '',
         'datetime': now,
@@ -202,7 +219,7 @@ class _HistoryPageState extends State<HistoryPage> {
     if (context.mounted) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(SnackBar(content: Text('Checked OUT $name')));
+      ).showSnackBar(SnackBar(content: Text('Checked OUT $displayName')));
     }
   }
 
@@ -210,16 +227,18 @@ class _HistoryPageState extends State<HistoryPage> {
 
   List<Map<String, dynamic>> getCheckedInList() {
     final List<Map<String, dynamic>> arr = [];
-    for (final name in _allKnownNames) {
-      if (StateCache.isCheckedIn(name)) {
-        arr.add({
-          'name': name,
-          'tag': StateCache.checkedInTank(name),
-          'timestamp': StateCache.checkedInTimestamp(name),
-          'waterIn': StateCache.diverIsInWater(name),
-          'department': _departmentFor(name),
-        });
-      }
+    final ids = StateCache.checkedInIds();
+    for (final id in ids) {
+      final roster = _cachedRoster[id] ?? const {};
+      final name = (roster['name'] ?? id).toString();
+      arr.add({
+        'id': id,
+        'name': name,
+        'tag': StateCache.checkedInTank(id),
+        'timestamp': StateCache.checkedInTimestamp(id),
+        'waterIn': StateCache.diverIsInWater(id),
+        'department': roster['department'],
+      });
     }
     arr.sort(
       (a, b) => (a['name'] as String).toLowerCase().compareTo(
@@ -617,16 +636,18 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
-  void _openChangeTag(String name) async {
-    if (StateCache.diverIsInWater(name)) {
+  Future<void> _openChangeTag(String id, String name) async {
+    if (StateCache.diverIsInWater(id)) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text("Change tank after OUT.")));
       return;
     }
-    final result = await Navigator.push<int?>(
+    final result = await Navigator.push<int>(
       context,
-      MaterialPageRoute(builder: (_) => ChangeTagScreen(diverName: name)),
+      MaterialPageRoute(
+        builder: (_) => ChangeTagScreen(diverId: id, diverName: name),
+      ),
     );
     if (result != null && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -815,8 +836,14 @@ class _HistoryPageState extends State<HistoryPage> {
                                     : "${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} "
                                           "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
                                 return InkWell(
-                                  onTap: () => _openChangeTag(name),
+                                  onTap: () => _openChangeTag(
+                                    item['id'] as String,
+                                    name,
+                                  ),
                                   child: Container(
+                                    color: i % 2 == 0
+                                        ? Colors.white
+                                        : Colors.grey[100],
                                     padding: EdgeInsets.symmetric(
                                       vertical: 8 * scale,
                                       horizontal: 8 * scale,
@@ -889,7 +916,8 @@ class _HistoryPageState extends State<HistoryPage> {
                                                                   16 * scale,
                                                             ),
                                                       ),
-                                                      onPressed: () => _quickIn(
+                                                      onPressed: () => _quickInById(
+                                                        (item['id'] as String),
                                                         name,
                                                         tag: tag is int
                                                             ? tag
@@ -924,15 +952,18 @@ class _HistoryPageState extends State<HistoryPage> {
                                                                   16 * scale,
                                                             ),
                                                       ),
-                                                      onPressed: () => _quickOut(
-                                                        name,
-                                                        tag: tag is int
-                                                            ? tag
-                                                            : int.tryParse(
-                                                                (tag ?? '')
-                                                                    .toString(),
-                                                              ),
-                                                      ),
+                                                      onPressed: () =>
+                                                          _quickOutById(
+                                                            (item['id']
+                                                                as String),
+                                                            name,
+                                                            tag: tag is int
+                                                                ? tag
+                                                                : int.tryParse(
+                                                                    (tag ?? '')
+                                                                        .toString(),
+                                                                  ),
+                                                          ),
                                                       child: const Text('OUT'),
                                                     ),
                                                   ),
@@ -1113,6 +1144,9 @@ class _HistoryPageState extends State<HistoryPage> {
                                     Map<String, dynamic>.from(s),
                                   ),
                                   child: Container(
+                                    color: idx % 2 == 0
+                                        ? Colors.white
+                                        : Colors.grey[100],
                                     padding: EdgeInsets.symmetric(
                                       vertical: 8 * scale,
                                       horizontal: 8 * scale,
@@ -1225,7 +1259,10 @@ class _HistoryPageState extends State<HistoryPage> {
                                                                 ),
                                                           ),
                                                           onPressed: () =>
-                                                              _quickOut(
+                                                              _quickOutById(
+                                                                (s['diverId'] ??
+                                                                        '')
+                                                                    .toString(),
                                                                 (s['name'] ??
                                                                         '')
                                                                     .toString(),
@@ -1277,6 +1314,7 @@ class _HistoryPageState extends State<HistoryPage> {
 
   static List<Map<String, dynamic>> _cachedChronologicalLogs = [];
   static List<String> _cachedNames = [];
+  static Map<String, Map<String, dynamic>> _cachedRoster = {};
 
   // Prime caches on each listener tick
   void _refreshCaches() async {
@@ -1291,16 +1329,25 @@ class _HistoryPageState extends State<HistoryPage> {
       final diversSnap = await FirebaseFirestore.instance
           .collection('divers')
           .get();
-      final rosterNames = [
-        for (final d in diversSnap.docs) d.id,
-      ].where((n) => n.isNotEmpty).toList();
-      // Ensure currently checked-in names are included even if missing from roster.
+      final Map<String, Map<String, dynamic>> roster = {};
+      for (final d in diversSnap.docs) {
+        final data = d.data();
+        roster[d.id] = {
+          'name': (data['name'] ?? d.id).toString(),
+          'department': data['department'],
+          'team': data['team'],
+        };
+      }
+      _cachedRoster = roster;
+
+      final rosterIds = roster.keys.toList();
+      // Ensure currently checked-in IDs are included even if missing from roster.
       final checkinsSnap = await FirebaseFirestore.instance
           .collection('checkins')
           .where('checkedIn', isEqualTo: true)
           .get();
-      final checkedNames = [for (final d in checkinsSnap.docs) d.id];
-      final all = <String>{...rosterNames, ...checkedNames}.toList();
+      final checkedIds = [for (final d in checkinsSnap.docs) d.id];
+      final all = <String>{...rosterIds, ...checkedIds}.toList();
       all.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
       _cachedNames = all;
     } catch (_) {}

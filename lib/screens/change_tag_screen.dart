@@ -5,8 +5,13 @@ import '../core/utils.dart';
 import '../services/state_cache.dart';
 
 class ChangeTagScreen extends StatefulWidget {
+  final String diverId;
   final String diverName;
-  const ChangeTagScreen({super.key, required this.diverName});
+  const ChangeTagScreen({
+    super.key,
+    required this.diverId,
+    required this.diverName,
+  });
 
   @override
   State<ChangeTagScreen> createState() => _ChangeTagScreenState();
@@ -25,21 +30,18 @@ class _ChangeTagScreenState extends State<ChangeTagScreen> {
       _snack("Please enter a tank number.");
       return;
     }
-    if (await StateCache.tankInUse(
-      selectedTag!,
-      exceptName: widget.diverName,
-    )) {
+    if (await StateCache.tankInUse(selectedTag!, exceptId: widget.diverId)) {
       _snack(
         "Tank ${selectedTag!.toString().padLeft(2, '0')} is already in use.",
       );
       return;
     }
-    if (!StateCache.isCheckedIn(widget.diverName)) {
+    if (!StateCache.isCheckedIn(widget.diverId)) {
       _snack("Diver is not checked in.");
       return;
     }
     await StateCache.setCheckin(
-      widget.diverName,
+      widget.diverId,
       checkedIn: true,
       tag: selectedTag,
     );

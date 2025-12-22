@@ -22,14 +22,14 @@ class _OperatorScreenState extends State<OperatorScreen> {
   late Box
   logsBox; // roster-related logs kept only for legacy, will no longer be source of truth
   late Box checkinsBox; // legacy local checkins (not authoritative)
-  List<Map> divers = []; // SHOW DIVERS roster
+  List<Map> divers = []; // roster with 'id' and 'name'
   String selectedTeam = teams.first;
 
   // When a non-Show-Divers department is selected, this is set.
   String? selectedDepartmentFilter;
   bool selectedAll = true; // default to show ALL checked-in divers
 
-  final Set<String> selectedDivers = {}; // diver names (any department)
+  final Set<String> selectedDivers = {}; // diverIds (any department)
   // Optional gas values per selected diver (bars). In: default 200 for OUT divers, Out: default null ('-').
   final Map<String, int?> _gasIn = {}; // 0..250 or null
   final Map<String, int?> _gasOut = {}; // 0..250 or null
@@ -87,7 +87,12 @@ class _OperatorScreenState extends State<OperatorScreen> {
     try {
       final snap = await FirebaseFirestore.instance.collection('divers').get();
       final remote = [
-        for (final d in snap.docs) {...d.data(), 'name': d.id},
+        for (final d in snap.docs)
+          {
+            ...d.data(),
+            'id': d.id,
+            'name': (d.data()['name'] ?? d.id).toString(),
+          },
       ];
       final list = remote.isNotEmpty
           ? remote.map((e) => Map<String, dynamic>.from(e)).toList()
@@ -97,6 +102,13 @@ class _OperatorScreenState extends State<OperatorScreen> {
       final stored = diversBox.get('diversList', defaultValue: <Map>[]);
       final list = List<Map>.from(stored);
       divers = list;
+    }
+    // Ensure local fallback items have 'id'
+    for (int i = 0; i < divers.length; i++) {
+      final m = divers[i];
+      if (!m.containsKey('id')) {
+        divers[i] = {...m, 'id': (m['name'] ?? '').toString()};
+      }
     }
     if (mounted) setState(() {});
   }
@@ -117,10 +129,10 @@ class _OperatorScreenState extends State<OperatorScreen> {
   // TEAMS that have at least one checked-in diver (for SHOW DIVERS only)
   List<String> get teamsWithCheckins {
     final Set<String> teamsSet = {};
-    for (final name in StateCache.checkedInNames()) {
+    for (final id in StateCache.checkedInIds()) {
       final list = divers;
       final match = list.firstWhere(
-        (d) => (d['name'] ?? '') == name,
+        (d) => (d['id'] ?? '') == id,
         orElse: () => {},
       );
       if ((match['department'] ?? '') == "SHOW DIVERS") {
@@ -144,21 +156,21 @@ class _OperatorScreenState extends State<OperatorScreen> {
       (d) => (d['department'] ?? '') == "SHOW DIVERS",
     );
     final teamDivers = showDivers.where((d) => (d['team'] ?? '') == useTeam);
-    return teamDivers.where((d) => StateCache.isCheckedIn(d['name'])).toList();
+    return teamDivers.where((d) => StateCache.isCheckedIn(d['id'])).toList();
   }
 
-  String? _departmentForName(String name) {
+  String? _departmentForId(String id) {
     final list = divers;
     for (final d in list) {
-      if ((d['name'] ?? '') == name) return d['department'];
+      if ((d['id'] ?? '') == id) return d['department'];
     }
     return null;
   }
 
   List<String> get nonShowDepartmentsWithCheckins {
     final Set<String> depts = {};
-    for (final name in StateCache.checkedInNames()) {
-      final dept = _departmentForName(name);
+    for (final id in StateCache.checkedInIds()) {
+      final dept = _departmentForId(id);
       if (dept != null && dept != "SHOW DIVERS") {
         depts.add(dept);
       }
@@ -175,17 +187,17 @@ class _OperatorScreenState extends State<OperatorScreen> {
     final list = divers;
     final deptNames = list
         .where((d) => d['department'] == selectedDepartmentFilter)
-        .map((d) => (d['name'] ?? '').toString())
-        .where((n) => n.isNotEmpty && StateCache.isCheckedIn(n))
+        .map((d) => (d['id'] ?? '').toString())
+        .where((id) => id.isNotEmpty && StateCache.isCheckedIn(id))
         .toList();
     deptNames.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
     return deptNames;
   }
 
-  // All currently checked-in diver names (across all departments)
+  // All currently checked-in diver IDs (across all departments)
   List<String> get allCheckedInNames {
     // Source from StateCache checkins map to avoid roster dependency
-    return StateCache.checkedInNames();
+    return StateCache.checkedInIds();
   }
 
   void _snack(String m) {
@@ -237,14 +249,18 @@ class _OperatorScreenState extends State<OperatorScreen> {
                         DataColumn(label: Text('')),
                       ],
                       rows: [
-                        for (final name in selectedDivers.toList())
+                        for (final id in selectedDivers.toList())
                           DataRow(
                             cells: [
                               DataCell(
                                 SizedBox(
                                   width: 120,
                                   child: Text(
-                                    name,
+                                    divers.firstWhere(
+                                          (d) => d['id'] == id,
+                                          orElse: () => {'name': id},
+                                        )['name']
+                                        as String,
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
@@ -255,14 +271,14 @@ class _OperatorScreenState extends State<OperatorScreen> {
                                   child: InkWell(
                                     onTap: () async {
                                       // Prevent changing tank while diver is IN WATER
-                                      if (StateCache.diverIsInWater(name)) {
+                                      if (StateCache.diverIsInWater(id)) {
                                         _snack(
                                           "Cannot change tank while diver is IN WATER.",
                                         );
                                         return;
                                       }
                                       final currentTag =
-                                          StateCache.checkedInTank(name);
+                                          StateCache.checkedInTank(id);
                                       final newTag = await _editTagNumber(
                                         context,
                                         initial: currentTag,
@@ -270,7 +286,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                                       );
                                       if (newTag != null) {
                                         await StateCache.setCheckin(
-                                          name,
+                                          id,
                                           checkedIn: true,
                                           tag: newTag,
                                         );
@@ -279,7 +295,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                                     },
                                     child: Text(
                                       StateCache.checkedInTank(
-                                            name,
+                                            id,
                                           )?.toString().padLeft(2, '0') ??
                                           '--',
                                       overflow: TextOverflow.ellipsis,
@@ -297,19 +313,19 @@ class _OperatorScreenState extends State<OperatorScreen> {
                                     onTap: () async {
                                       final v = await _editGas(
                                         context,
-                                        initial: _gasIn[name],
+                                        initial: _gasIn[id],
                                         title: 'Gas In (bar)',
                                       );
-                                      setState(() => _gasIn[name] = v);
+                                      setState(() => _gasIn[id] = v);
                                     },
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
                                         vertical: 6.0,
                                       ),
                                       child: Text(
-                                        _gasIn[name] == null
+                                        _gasIn[id] == null
                                             ? '-'
-                                            : '${_gasIn[name]}bar',
+                                            : '${_gasIn[id]}bar',
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
                                           decoration: TextDecoration.underline,
@@ -326,19 +342,19 @@ class _OperatorScreenState extends State<OperatorScreen> {
                                     onTap: () async {
                                       final v = await _editGas(
                                         context,
-                                        initial: _gasOut[name],
+                                        initial: _gasOut[id],
                                         title: 'Gas Out (bar)',
                                       );
-                                      setState(() => _gasOut[name] = v);
+                                      setState(() => _gasOut[id] = v);
                                     },
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
                                         vertical: 6.0,
                                       ),
                                       child: Text(
-                                        _gasOut[name] == null
+                                        _gasOut[id] == null
                                             ? '? bar'
-                                            : '${_gasOut[name]}bar',
+                                            : '${_gasOut[id]}bar',
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
                                           decoration: TextDecoration.underline,
@@ -352,7 +368,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                                 SizedBox(
                                   width: 52,
                                   child: Text(
-                                    StateCache.diverIsInWater(name)
+                                    StateCache.diverIsInWater(id)
                                         ? 'In'
                                         : 'Out',
                                     overflow: TextOverflow.ellipsis,
@@ -364,7 +380,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                                   width: 28,
                                   child: Center(
                                     child: InkWell(
-                                      onTap: () => _toggleSelect(name),
+                                      onTap: () => _toggleSelect(id),
                                       child: const Icon(
                                         Icons.close,
                                         color: Colors.red,
@@ -444,21 +460,21 @@ class _OperatorScreenState extends State<OperatorScreen> {
   // Selection state helpers
   bool get allSelectedAreIn =>
       selectedDivers.isNotEmpty &&
-      selectedDivers.every((n) => StateCache.diverIsInWater(n));
+      selectedDivers.every((id) => StateCache.diverIsInWater(id));
   bool get allSelectedAreOut =>
       selectedDivers.isNotEmpty &&
-      selectedDivers.every((n) => !StateCache.diverIsInWater(n));
+      selectedDivers.every((id) => !StateCache.diverIsInWater(id));
   bool get mixedSelection =>
       selectedDivers.isNotEmpty && !(allSelectedAreIn || allSelectedAreOut);
 
-  void _toggleSelect(String name) {
+  void _toggleSelect(String id) {
     setState(() {
-      if (selectedDivers.contains(name)) {
-        selectedDivers.remove(name);
+      if (selectedDivers.contains(id)) {
+        selectedDivers.remove(id);
       } else {
-        selectedDivers.add(name);
-        _gasIn.putIfAbsent(name, () => 200); // default
-        _gasOut.putIfAbsent(name, () => null); // unknown by default -> '? bar'
+        selectedDivers.add(id);
+        _gasIn.putIfAbsent(id, () => 200); // default
+        _gasOut.putIfAbsent(id, () => null); // unknown by default -> '? bar'
       }
     });
   }
@@ -569,16 +585,21 @@ class _OperatorScreenState extends State<OperatorScreen> {
     if (!allSelectedAreOut) return;
     final now = DateTime.now().toIso8601String();
     final payload = <Map<String, dynamic>>[];
-    for (final name in selectedDivers) {
-      final tag = StateCache.checkedInTank(name);
+    for (final id in selectedDivers) {
+      final tag = StateCache.checkedInTank(id);
+      final displayName = divers.firstWhere(
+        (d) => d['id'] == id,
+        orElse: () => {'name': id},
+      )['name'];
       payload.add({
-        'name': name,
+        'diverId': id,
+        'name': displayName,
         'status': 'IN',
         'tag': tag ?? '',
         'datetime': now,
-        'gasIn': _gasIn[name],
+        'gasIn': _gasIn[id],
       });
-      await StateCache.setCheckin(name, checkedIn: true, tag: tag);
+      await StateCache.setCheckin(id, checkedIn: true, tag: tag);
     }
     await StateCache.addLogs(payload);
     await _playConfirm();
@@ -590,18 +611,23 @@ class _OperatorScreenState extends State<OperatorScreen> {
     if (!allSelectedAreIn) return;
     final now = DateTime.now().toIso8601String();
     final payload = <Map<String, dynamic>>[];
-    for (final name in selectedDivers) {
-      final tag = StateCache.checkedInTank(name);
+    for (final id in selectedDivers) {
+      final tag = StateCache.checkedInTank(id);
+      final displayName = divers.firstWhere(
+        (d) => d['id'] == id,
+        orElse: () => {'name': id},
+      )['name'];
       payload.add({
-        'name': name,
+        'diverId': id,
+        'name': displayName,
         'status': 'OUT',
         'tag': tag ?? '',
         'datetime': now,
-        'gasOut': _gasOut[name],
+        'gasOut': _gasOut[id],
       });
       // Do not uncheck from deck when sending OUT of water.
       // Keep the diver checked-in with the same tag.
-      await StateCache.setCheckin(name, checkedIn: true, tag: tag);
+      await StateCache.setCheckin(id, checkedIn: true, tag: tag);
     }
     await StateCache.addLogs(payload);
     await _playConfirm();
@@ -635,7 +661,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
 
     final List<Widget> leftTiles = [];
     if (selectedAll) {
-      final names = allCheckedInNames;
+      final names = allCheckedInNames; // now diverIds
       if (names.isEmpty) {
         leftTiles.add(
           Center(
@@ -657,12 +683,16 @@ class _OperatorScreenState extends State<OperatorScreen> {
             crossAxisSpacing: gridSpacing,
             childAspectRatio: childAspect,
             children: [
-              for (final name in names)
+              for (final id in names)
                 Builder(
                   builder: (_) {
-                    final waterIn = StateCache.diverIsInWater(name);
-                    final bool isSel = selectedDivers.contains(name);
-                    final int? tag = StateCache.checkedInTank(name);
+                    final waterIn = StateCache.diverIsInWater(id);
+                    final bool isSel = selectedDivers.contains(id);
+                    final int? tag = StateCache.checkedInTank(id);
+                    final displayName = divers.firstWhere(
+                      (d) => d['id'] == id,
+                      orElse: () => {'name': id},
+                    )['name'];
                     // Use neutral color for ALL listing
                     final Color bg = isSel ? Colors.green : Colors.blueGrey;
                     return Stack(
@@ -681,13 +711,13 @@ class _OperatorScreenState extends State<OperatorScreen> {
                             ),
                             elevation: 0,
                           ),
-                          onPressed: () => _toggleSelect(name),
+                          onPressed: () => _toggleSelect(id),
                           child: FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Text(
                               tag == null
-                                  ? name
-                                  : "$name  (Tank ${tag.toString().padLeft(2, '0')})",
+                                  ? displayName
+                                  : "$displayName  (Tank ${tag.toString().padLeft(2, '0')})",
                             ),
                           ),
                         ),
@@ -749,11 +779,12 @@ class _OperatorScreenState extends State<OperatorScreen> {
               for (final d in list)
                 Builder(
                   builder: (_) {
-                    final name = d['name'] as String;
-                    final waterIn = StateCache.diverIsInWater(name);
-                    final bool isSel = selectedDivers.contains(name);
+                    final String id = (d['id'] ?? '').toString();
+                    final String name = (d['name'] ?? '').toString();
+                    final waterIn = StateCache.diverIsInWater(id);
+                    final bool isSel = selectedDivers.contains(id);
                     final Color bg = isSel ? Colors.green : Colors.blueGrey;
-                    final int? tag = StateCache.checkedInTank(name);
+                    final int? tag = StateCache.checkedInTank(id);
                     return Stack(
                       children: [
                         ElevatedButton(
@@ -770,7 +801,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                             ),
                             elevation: 0,
                           ),
-                          onPressed: () => _toggleSelect(name),
+                          onPressed: () => _toggleSelect(id),
                           child: FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Text(
@@ -813,7 +844,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
         );
       }
     } else {
-      final names = checkedInNamesForSelectedDepartment;
+      final names = checkedInNamesForSelectedDepartment; // ids
       if (names.isEmpty) {
         leftTiles.add(
           Center(
@@ -834,12 +865,16 @@ class _OperatorScreenState extends State<OperatorScreen> {
             crossAxisSpacing: gridSpacing,
             childAspectRatio: childAspect,
             children: [
-              for (final name in names)
+              for (final id in names)
                 Builder(
                   builder: (_) {
-                    final waterIn = StateCache.diverIsInWater(name);
-                    final bool isSel = selectedDivers.contains(name);
-                    final int? tag = StateCache.checkedInTank(name);
+                    final waterIn = StateCache.diverIsInWater(id);
+                    final bool isSel = selectedDivers.contains(id);
+                    final int? tag = StateCache.checkedInTank(id);
+                    final displayName = divers.firstWhere(
+                      (d) => d['id'] == id,
+                      orElse: () => {'name': id},
+                    )['name'];
                     final Color bg = isSel
                         ? Colors.green
                         : Colors.blueGrey; // neutral
@@ -859,13 +894,13 @@ class _OperatorScreenState extends State<OperatorScreen> {
                             ),
                             elevation: 0,
                           ),
-                          onPressed: () => _toggleSelect(name),
+                          onPressed: () => _toggleSelect(id),
                           child: FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Text(
                               tag == null
-                                  ? name
-                                  : "$name  (Tank ${tag.toString().padLeft(2, '0')})",
+                                  ? displayName
+                                  : "$displayName  (Tank ${tag.toString().padLeft(2, '0')})",
                             ),
                           ),
                         ),

@@ -25,7 +25,8 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
 
   List<Map> divers = [];
   String selectedTeam = teams.first;
-  String? selectedDiver;
+  String? selectedDiver; // diverId
+  String? selectedDiverName; // display name
   int? selectedTag;
   final TextEditingController _tankController = TextEditingController();
   static const int _maxTank = 999; // allow 3 digits
@@ -38,6 +39,8 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
   bool get isShowDivers => widget.department == 'SHOW DIVERS';
   bool get isOtherAggregated => widget.department == 'OTHER';
   String? selectedSubDepartment; // drill-down for OTHER
+  // Cache of OTHER sub-department counts built from the latest roster
+  Map<String, int> _otherCounts = {};
 
   @override
   void initState() {
@@ -84,11 +87,25 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
         .get()
         .then((snap) {
           final remote = [
-            for (final d in snap.docs) {...d.data(), 'name': d.id},
+            for (final d in snap.docs)
+              {
+                ...d.data(),
+                'id': d.id,
+                'name': (d.data()['name'] ?? d.id).toString(),
+              },
           ];
           if (remote.isNotEmpty) {
             list = remote.map((e) => Map<String, dynamic>.from(e)).toList();
           }
+          // Rebuild OTHER sub-department counts from the roster
+          final Map<String, int> counts = {};
+          for (final d in list) {
+            final dep = (d['department'] ?? '').toString();
+            if (dep.isEmpty) continue;
+            if (dep == 'SHOW DIVERS' || dep == 'DAY CREW') continue;
+            counts[dep] = (counts[dep] ?? 0) + 1;
+          }
+          _otherCounts = counts;
           if (isOtherAggregated) {
             if (selectedSubDepartment != null) {
               divers = list
@@ -106,6 +123,14 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
         })
         .catchError((_) {
           // Fallback to Hive-only
+          final Map<String, int> counts = {};
+          for (final d in list) {
+            final dep = (d['department'] ?? '').toString();
+            if (dep.isEmpty) continue;
+            if (dep == 'SHOW DIVERS' || dep == 'DAY CREW') continue;
+            counts[dep] = (counts[dep] ?? 0) + 1;
+          }
+          _otherCounts = counts;
           if (isOtherAggregated) {
             if (selectedSubDepartment != null) {
               divers = list
@@ -121,19 +146,6 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
           }
           if (mounted) setState(() {});
         });
-  }
-
-  Map<String, int> _otherSubDepartmentCounts() {
-    final stored = diversBox.get('diversList', defaultValue: <Map>[]);
-    final list = List<Map>.from(stored);
-    final Map<String, int> counts = {};
-    for (final d in list) {
-      final dep = (d['department'] ?? '').toString();
-      if (dep.isEmpty) continue;
-      if (dep == 'SHOW DIVERS' || dep == 'DAY CREW') continue;
-      counts[dep] = (counts[dep] ?? 0) + 1;
-    }
-    return counts;
   }
 
   void _applyInput(String raw) {
@@ -183,6 +195,7 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
   void _cancel() {
     setState(() {
       selectedDiver = null;
+      selectedDiverName = null;
       selectedTag = null;
       _tankController.clear();
     });
@@ -197,7 +210,7 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
       _snack('Already checked in. Change tank from Log → Checked‑In.');
       return;
     }
-    if (await StateCache.tankInUse(selectedTag!, exceptName: null)) {
+    if (await StateCache.tankInUse(selectedTag!, exceptId: null)) {
       _snack(
         'Tank ${selectedTag!.toString().padLeft(2, '0')} is already in use.',
       );
@@ -329,7 +342,7 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
                       padding: EdgeInsets.only(bottom: 8 * scale),
                       child: Builder(
                         builder: (_) {
-                          final counts = _otherSubDepartmentCounts();
+                          final counts = _otherCounts;
                           final deps = counts.keys.toList()..sort();
                           if (deps.isEmpty) {
                             return Center(
@@ -458,7 +471,11 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
                                                 onPressed: () {
                                                   setState(() {
                                                     selectedDiver =
-                                                        person['name'];
+                                                        (person['id'] ?? '')
+                                                            .toString();
+                                                    selectedDiverName =
+                                                        (person['name'] ?? '')
+                                                            .toString();
                                                     selectedTag = null;
                                                     _tankController.clear();
                                                   });
@@ -568,9 +585,9 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
                             ),
                             child: Column(
                               children: [
-                                if (selectedDiver != null)
+                                if (selectedDiverName != null)
                                   Text(
-                                    selectedDiver!,
+                                    selectedDiverName!,
                                     textAlign: TextAlign.center,
                                     style: TextStyle(
                                       fontSize: (isPhone ? 30 : 42) * scale,

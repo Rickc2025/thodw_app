@@ -10,13 +10,13 @@ class StateCache {
 
   final db = FirebaseFirestore.instance;
 
-  // name -> { checkedIn: bool, tag: int? }
+  // diverId -> { checkedIn: bool, tag: int?, timestamp: String }
   final Map<String, Map<String, dynamic>> _checkins = {};
 
-  // key name|tag -> latest log map { name, status, tag, datetime, gasIn?, gasOut? }
+  // key diverId|tag -> latest log map { diverId, name, status, tag, datetime, gasIn?, gasOut? }
   final Map<String, Map<String, dynamic>> _lastLogByKey = {};
-  // name -> latest log (by datetime) regardless of tag
-  final Map<String, Map<String, dynamic>> _latestLogByName = {};
+  // diverId -> latest log (by datetime) regardless of tag
+  final Map<String, Map<String, dynamic>> _latestLogById = {};
 
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _checkinsSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _logsSub;
@@ -53,10 +53,10 @@ class StateCache {
         .listen((snap) {
           for (final d in snap.docs) {
             final data = d.data();
-            final key = "${data['name'] ?? ''}|${data['tag'] ?? ''}";
+            final key = "${data['diverId'] ?? ''}|${data['tag'] ?? ''}";
             // Always update the latest log for this name|tag so counts refresh across devices
             _lastLogByKey[key] = data;
-            final name = (data['name'] ?? '').toString();
+            final diverId = (data['diverId'] ?? '').toString();
             final dtStr = (data['datetime'] ?? '').toString();
             DateTime? dt;
             try {
@@ -64,8 +64,8 @@ class StateCache {
             } catch (_) {
               dt = null;
             }
-            if (name.isNotEmpty) {
-              final prev = _latestLogByName[name];
+            if (diverId.isNotEmpty) {
+              final prev = _latestLogById[diverId];
               DateTime? prevDt;
               try {
                 prevDt = prev == null
@@ -76,7 +76,7 @@ class StateCache {
               }
               if (prev == null ||
                   (dt != null && (prevDt == null || dt.isAfter(prevDt)))) {
-                _latestLogByName[name] = data;
+                _latestLogById[diverId] = data;
               }
             }
           }
@@ -90,24 +90,24 @@ class StateCache {
   }
 
   // Synchronous getters used by UI
-  static bool isCheckedIn(String name) {
-    final m = _instance._checkins[name];
+  static bool isCheckedIn(String diverId) {
+    final m = _instance._checkins[diverId];
     return (m?['checkedIn'] ?? false) == true;
   }
 
-  static int? checkedInTank(String name) {
-    final m = _instance._checkins[name];
+  static int? checkedInTank(String diverId) {
+    final m = _instance._checkins[diverId];
     return m?['tag'] as int?;
   }
 
-  static String? checkedInTimestamp(String name) {
-    final m = _instance._checkins[name];
+  static String? checkedInTimestamp(String diverId) {
+    final m = _instance._checkins[diverId];
     final ts = (m?['timestamp'] ?? '').toString();
     return ts.isEmpty ? null : ts;
   }
 
-  static bool diverIsInWater(String name) {
-    final m = _instance._latestLogByName[name];
+  static bool diverIsInWater(String diverId) {
+    final m = _instance._latestLogById[diverId];
     if (m == null) return false;
     final status = (m['status'] ?? '').toString().toUpperCase();
     return status == 'IN';
@@ -115,29 +115,29 @@ class StateCache {
 
   static int currentlyIn() {
     int count = 0;
-    for (final v in _instance._latestLogByName.values) {
+    for (final v in _instance._latestLogById.values) {
       final status = (v['status'] ?? '').toString().toUpperCase();
       if (status == 'IN') count++;
     }
     return count;
   }
 
-  // Synchronous list of names that are currently checked-in on deck
-  static List<String> checkedInNames() {
-    final List<String> names = [];
-    _instance._checkins.forEach((name, m) {
-      if ((m['checkedIn'] ?? false) == true) names.add(name);
+  // Synchronous list of diverIds that are currently checked-in on deck
+  static List<String> checkedInIds() {
+    final List<String> ids = [];
+    _instance._checkins.forEach((id, m) {
+      if ((m['checkedIn'] ?? false) == true) ids.add(id);
     });
-    names.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
-    return names;
+    ids.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return ids;
   }
 
   static Future<void> addLogs(List<Map<String, dynamic>> logs) async {
     // Optimistically update local cache so UI reflects immediately
     for (final l in logs) {
-      final key = "${l['name'] ?? ''}|${l['tag'] ?? ''}";
+      final key = "${l['diverId'] ?? ''}|${l['tag'] ?? ''}";
       _instance._lastLogByKey[key] = l;
-      final name = (l['name'] ?? '').toString();
+      final diverId = (l['diverId'] ?? '').toString();
       final dtStr = (l['datetime'] ?? '').toString();
       DateTime? dt;
       try {
@@ -145,7 +145,7 @@ class StateCache {
       } catch (_) {
         dt = null;
       }
-      final prev = _instance._latestLogByName[name];
+      final prev = _instance._latestLogById[diverId];
       DateTime? prevDt;
       try {
         prevDt = prev == null
@@ -154,10 +154,10 @@ class StateCache {
       } catch (_) {
         prevDt = null;
       }
-      if (name.isNotEmpty) {
+      if (diverId.isNotEmpty) {
         if (prev == null ||
             (dt != null && (prevDt == null || dt.isAfter(prevDt)))) {
-          _instance._latestLogByName[name] = l;
+          _instance._latestLogById[diverId] = l;
         }
       }
     }
@@ -172,24 +172,24 @@ class StateCache {
   }
 
   static Future<void> setCheckin(
-    String name, {
+    String diverId, {
     required bool checkedIn,
     int? tag,
   }) async {
     // Optimistically update local cache so UI reflects immediately
-    final prev = _instance._checkins[name] ?? {};
+    final prev = _instance._checkins[diverId] ?? {};
     final String prevTs = (prev['timestamp'] ?? '').toString();
     // If marking checkedIn true and there is no timestamp, set now; if updating tag only, preserve timestamp.
     final String ts = checkedIn
         ? (prevTs.isEmpty ? DateTime.now().toIso8601String() : prevTs)
         : prevTs;
-    _instance._checkins[name] = {
+    _instance._checkins[diverId] = {
       'checkedIn': checkedIn,
       'tag': tag,
       'timestamp': ts,
     };
     // Persist to Firestore
-    final doc = _instance.db.collection('checkins').doc(name);
+    final doc = _instance.db.collection('checkins').doc(diverId);
     await doc.set({
       'checkedIn': checkedIn,
       'tag': tag,
@@ -198,14 +198,14 @@ class StateCache {
   }
 
   // Check if a tank tag is currently assigned to any checked-in diver, optionally excluding a name
-  static Future<bool> tankInUse(int tag, {String? exceptName}) async {
+  static Future<bool> tankInUse(int tag, {String? exceptId}) async {
     final snap = await _instance.db
         .collection('checkins')
         .where('checkedIn', isEqualTo: true)
         .get();
     for (final d in snap.docs) {
-      final name = d.id;
-      if (exceptName != null && name == exceptName) continue;
+      final id = d.id;
+      if (exceptId != null && id == exceptId) continue;
       final data = d.data();
       final t = _parseInt(data['tag']);
       if (t == tag) return true;

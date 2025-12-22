@@ -96,6 +96,7 @@ class _SettingsPageState extends State<SettingsPage> {
   void _showDiverDialog({Map? diver}) {
     final checkinsBox = Hive.box('checkins');
     final bool isEdit = diver != null;
+    final String? diverId = isEdit ? (diver!['id']?.toString()) : null;
     String oldName = isEdit ? (diver['name'] ?? '').toString() : '';
     String newName = isEdit ? oldName : '';
     // Persist a single controller instance across dialog rebuilds so the
@@ -250,14 +251,16 @@ class _SettingsPageState extends State<SettingsPage> {
                   );
                   if (ok == true) {
                     // Do not allow removal if diver is currently in water.
-                    if (StateCache.diverIsInWater(oldName)) {
+                    if (diverId != null && StateCache.diverIsInWater(diverId)) {
                       _snack("Cannot remove diver who is currently IN WATER.");
                       return;
                     }
-                    await DiversService.removeDiver(oldName);
+                    if (diverId != null) {
+                      await DiversService.removeDiver(diverId);
+                    }
                     // Firestore cascade handles check-ins; remove local legacy entry if present.
                     try {
-                      checkinsBox.delete(oldName);
+                      if (diverId != null) checkinsBox.delete(diverId);
                     } catch (_) {}
                     Navigator.pop(ctx);
                     setState(() {});
@@ -284,20 +287,14 @@ class _SettingsPageState extends State<SettingsPage> {
                   _snack("Select gas: Air or Nitrox.");
                   return;
                 }
-                final list = List<Map<String, dynamic>>.from(_divers);
                 if (isEdit) {
-                  // Check duplicate name (excluding current diver)
-                  if (list.any(
-                    (d) =>
-                        (d['name'] ?? '').toString().toLowerCase() ==
-                            newName.trim().toLowerCase() &&
-                        (d['name'] ?? '') != oldName,
-                  )) {
-                    _snack('Another diver already has this name.');
+                  // Update diver record
+                  if (diverId == null) {
+                    _snack('Could not update: missing diver id.');
                     return;
                   }
-                  // Update diver record
-                  await DiversService.setDiver(newName.trim(), {
+                  await DiversService.updateDiver(diverId, {
+                    'name': newName.trim(),
                     'department': selectedDepartment,
                     'team': selectedDepartment == 'SHOW DIVERS'
                         ? selectedTeam
@@ -306,43 +303,13 @@ class _SettingsPageState extends State<SettingsPage> {
                     'gasNitrox': gasNitrox,
                     'gffm': gffm,
                   });
-                  // Migrate check-in key if name changed (Firestore + legacy Hive if present)
-                  if (oldName != newName.trim()) {
-                    final fs = FirebaseFirestore.instance;
-                    try {
-                      final oldDoc = await fs
-                          .collection('checkins')
-                          .doc(oldName)
-                          .get();
-                      if (oldDoc.exists) {
-                        final data = oldDoc.data() ?? {};
-                        await fs
-                            .collection('checkins')
-                            .doc(newName.trim())
-                            .set(data);
-                        await fs.collection('checkins').doc(oldName).delete();
-                      }
-                    } catch (_) {}
-                    final data = checkinsBox.get(oldName);
-                    if (data != null) {
-                      checkinsBox.put(newName.trim(), data);
-                      checkinsBox.delete(oldName);
-                    }
-                  }
                   Navigator.pop(ctx);
                   setState(() {});
                   _snack('Diver updated.');
                 } else {
                   // Add new diver
-                  if (list.any(
-                    (d) =>
-                        (d['name'] ?? '').toString().toLowerCase() ==
-                        newName.trim().toLowerCase(),
-                  )) {
-                    _snack('Diver already exists.');
-                    return;
-                  }
-                  await DiversService.setDiver(newName.trim(), {
+                  await DiversService.createDiver({
+                    'name': newName.trim(),
                     'department': selectedDepartment,
                     'team': selectedDepartment == 'SHOW DIVERS'
                         ? selectedTeam
@@ -384,7 +351,7 @@ class _SettingsPageState extends State<SettingsPage> {
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
             SizedBox(height: 2),
-            Text('Updated: 2025-12-15 at 08:22 AM'),
+            Text('Updated: 2025-12-22 at 11:54 PM'),
             SizedBox(height: 10),
             Text('Developed by: Ricardo Costa Silva'),
             SizedBox(height: 6),
@@ -431,11 +398,11 @@ class _SettingsPageState extends State<SettingsPage> {
             onPressed: () async {
               // Clear only those checked‑in who are NOT currently IN WATER
               final coll = FirebaseFirestore.instance.collection('checkins');
-              final names = StateCache.checkedInNames();
+              final ids = StateCache.checkedInIds();
               final batch = FirebaseFirestore.instance.batch();
-              for (final name in names) {
-                if (!StateCache.diverIsInWater(name)) {
-                  batch.delete(coll.doc(name));
+              for (final id in ids) {
+                if (!StateCache.diverIsInWater(id)) {
+                  batch.delete(coll.doc(id));
                 }
               }
               await batch.commit();
@@ -621,102 +588,109 @@ class _SettingsPageState extends State<SettingsPage> {
                                   d['team'] != null) {
                                 subtitle += " - ${d['team']}";
                               }
-                              return ListTile(
-                                title: Text(
-                                  d['name'] ?? '',
-                                  style: TextStyle(fontSize: 20 * scale),
-                                ),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      subtitle,
-                                      style: TextStyle(fontSize: 14 * scale),
-                                    ),
-                                    Builder(
-                                      builder: (_) {
-                                        final bool gasAir =
-                                            (d['gasAir'] ?? false) == true;
-                                        final bool gasNitrox =
-                                            (d['gasNitrox'] ?? false) == true;
-                                        final bool gffm =
-                                            (d['gffm'] ?? false) == true;
-                                        final chips = <Widget>[];
-                                        if (gasAir) {
-                                          chips.add(
-                                            Chip(
-                                              label: const Text('AIR'),
-                                              backgroundColor: Colors.blue[300],
-                                              labelStyle: const TextStyle(
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                              materialTapTargetSize:
-                                                  MaterialTapTargetSize
-                                                      .shrinkWrap,
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                            ),
-                                          );
-                                        }
-                                        if (gasNitrox) {
-                                          chips.add(
-                                            Chip(
-                                              label: const Text('NITROX'),
-                                              backgroundColor:
-                                                  Colors.green[400],
-                                              labelStyle: const TextStyle(
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                              materialTapTargetSize:
-                                                  MaterialTapTargetSize
-                                                      .shrinkWrap,
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                            ),
-                                          );
-                                        }
-                                        if (gffm) {
-                                          chips.add(
-                                            Chip(
-                                              label: const Text('GFFM'),
-                                              backgroundColor: Colors.black87,
-                                              labelStyle: const TextStyle(
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.w700,
-                                              ),
-                                              materialTapTargetSize:
-                                                  MaterialTapTargetSize
-                                                      .shrinkWrap,
-                                              visualDensity:
-                                                  VisualDensity.compact,
-                                            ),
-                                          );
-                                        }
-                                        if (chips.isEmpty)
-                                          return const SizedBox.shrink();
-                                        return Padding(
-                                          padding: EdgeInsets.only(
-                                            top: 4 * scale,
-                                          ),
-                                          child: Wrap(
-                                            spacing: 6,
-                                            runSpacing: -6,
-                                            children: chips,
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  ],
-                                ),
-                                trailing: IconButton(
-                                  icon: Icon(
-                                    Icons.edit,
-                                    color: Colors.blueGrey[700],
-                                    size: 22 * scale,
+                              return Container(
+                                color: i % 2 == 0
+                                    ? Colors.white
+                                    : Colors.grey[100],
+                                child: ListTile(
+                                  title: Text(
+                                    d['name'] ?? '',
+                                    style: TextStyle(fontSize: 20 * scale),
                                   ),
-                                  onPressed: () => _showEditDiverDialog(d),
+                                  subtitle: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        subtitle,
+                                        style: TextStyle(fontSize: 14 * scale),
+                                      ),
+                                      Builder(
+                                        builder: (_) {
+                                          final bool gasAir =
+                                              (d['gasAir'] ?? false) == true;
+                                          final bool gasNitrox =
+                                              (d['gasNitrox'] ?? false) == true;
+                                          final bool gffm =
+                                              (d['gffm'] ?? false) == true;
+                                          final chips = <Widget>[];
+                                          if (gasAir) {
+                                            chips.add(
+                                              Chip(
+                                                label: const Text('AIR'),
+                                                backgroundColor:
+                                                    Colors.blue[300],
+                                                labelStyle: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                                materialTapTargetSize:
+                                                    MaterialTapTargetSize
+                                                        .shrinkWrap,
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                              ),
+                                            );
+                                          }
+                                          if (gasNitrox) {
+                                            chips.add(
+                                              Chip(
+                                                label: const Text('NITROX'),
+                                                backgroundColor:
+                                                    Colors.green[400],
+                                                labelStyle: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                                materialTapTargetSize:
+                                                    MaterialTapTargetSize
+                                                        .shrinkWrap,
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                              ),
+                                            );
+                                          }
+                                          if (gffm) {
+                                            chips.add(
+                                              Chip(
+                                                label: const Text('GFFM'),
+                                                backgroundColor: Colors.black87,
+                                                labelStyle: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                                materialTapTargetSize:
+                                                    MaterialTapTargetSize
+                                                        .shrinkWrap,
+                                                visualDensity:
+                                                    VisualDensity.compact,
+                                              ),
+                                            );
+                                          }
+                                          if (chips.isEmpty)
+                                            return const SizedBox.shrink();
+                                          return Padding(
+                                            padding: EdgeInsets.only(
+                                              top: 4 * scale,
+                                            ),
+                                            child: Wrap(
+                                              spacing: 6,
+                                              runSpacing: -6,
+                                              children: chips,
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    ],
+                                  ),
+                                  trailing: IconButton(
+                                    icon: Icon(
+                                      Icons.edit,
+                                      color: Colors.blueGrey[700],
+                                      size: 22 * scale,
+                                    ),
+                                    onPressed: () => _showEditDiverDialog(d),
+                                  ),
                                 ),
                               );
                             },
