@@ -238,6 +238,7 @@ class _HistoryPageState extends State<HistoryPage> {
         'timestamp': StateCache.checkedInTimestamp(id),
         'waterIn': StateCache.diverIsInWater(id),
         'department': roster['department'],
+        'team': roster['team'],
       });
     }
     arr.sort(
@@ -464,14 +465,8 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 
   Future<void> _editSessionDialog(Map<String, dynamic> session) async {
-    // Pull current logs from Firestore for editing
-    final snap = await FirebaseFirestore.instance
-        .collection('logs')
-        .orderBy('datetime')
-        .get();
-    final List<Map<String, dynamic>> logsList = [
-      for (final d in snap.docs) d.data(),
-    ];
+    // Use cached chronological logs which include doc IDs
+    final List<Map<String, dynamic>> logsList = _firestoreLogsChronological;
     // Extract existing values
     String tank = (session['tag'] ?? '').toString();
     int? gasIn = session['gasIn'] is int ? session['gasIn'] as int : null;
@@ -600,31 +595,46 @@ class _HistoryPageState extends State<HistoryPage> {
                 // Parse and apply
                 tank = tankCtrl.text.trim();
                 gasIn = int.tryParse(gasInCtrl.text.trim());
-                gasOut = int.tryParse(gasOutCtrl.text.trim());
+                // Empty -> null (displayed as '? bar')
+                final String gasOutStr = gasOutCtrl.text.trim();
+                gasOut = gasOutStr.isEmpty ? null : int.tryParse(gasOutStr);
+
                 final int? idxIn = session['logIndexIn'] as int?;
                 final int? idxOut = session['logIndexOut'] as int?;
+
+                final coll = FirebaseFirestore.instance.collection('logs');
+                final batch = FirebaseFirestore.instance.batch();
+
                 if (idxIn != null && idxIn >= 0 && idxIn < logsList.length) {
-                  final Map<String, dynamic> inLog = Map<String, dynamic>.from(
-                    logsList[idxIn] as Map,
-                  );
-                  inLog['tag'] = tank;
-                  if (dtIn != null) inLog['datetime'] = dtIn!.toIso8601String();
-                  inLog['gasIn'] = gasIn;
-                  logsList[idxIn] = inLog;
+                  final Map inLog = logsList[idxIn];
+                  final String inDocId = (inLog['docId'] ?? '').toString();
+                  if (inDocId.isNotEmpty) {
+                    final Map<String, dynamic> updates = {
+                      'tag': tank,
+                      'gasIn': gasIn,
+                    };
+                    if (dtIn != null)
+                      updates['datetime'] = dtIn!.toIso8601String();
+                    batch.update(coll.doc(inDocId), updates);
+                  }
                 }
                 if (idxOut != null && idxOut >= 0 && idxOut < logsList.length) {
-                  final Map<String, dynamic> outLog = Map<String, dynamic>.from(
-                    logsList[idxOut] as Map,
-                  );
-                  outLog['tag'] = tank;
-                  if (dtOut != null)
-                    outLog['datetime'] = dtOut!.toIso8601String();
-                  outLog['gasOut'] = gasOut; // null => '? bar'
-                  logsList[idxOut] = outLog;
+                  final Map outLog = logsList[idxOut];
+                  final String outDocId = (outLog['docId'] ?? '').toString();
+                  if (outDocId.isNotEmpty) {
+                    final Map<String, dynamic> updates = {
+                      'tag': tank,
+                      'gasOut': gasOut, // null => '? bar'
+                    };
+                    if (dtOut != null)
+                      updates['datetime'] = dtOut!.toIso8601String();
+                    batch.update(coll.doc(outDocId), updates);
+                  }
                 }
-                // Not ideal without document IDs; in a real app we would track IDs.
-                // For now, append edited entries as new logs to preserve consistency.
-                await StateCache.addLogs(logsList);
+
+                await batch.commit();
+                // Refresh caches so UI updates
+                _refreshCaches();
                 if (mounted) setState(() {});
                 if (context.mounted) Navigator.pop(dialogCtx);
               },
@@ -852,12 +862,56 @@ class _HistoryPageState extends State<HistoryPage> {
                                       children: [
                                         Expanded(
                                           flex: 2,
-                                          child: Text(
-                                            name,
-                                            style: TextStyle(
-                                              fontSize:
-                                                  (isPhone ? 14 : 17) * scale,
-                                            ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                name,
+                                                style: TextStyle(
+                                                  fontSize:
+                                                      (isPhone ? 14 : 17) *
+                                                      scale,
+                                                ),
+                                              ),
+                                              Builder(
+                                                builder: (_) {
+                                                  final String dep =
+                                                      (item['department'] ?? '')
+                                                          .toString();
+                                                  final String team =
+                                                      (item['team'] ?? '')
+                                                          .toString();
+                                                  String subtitle = '';
+                                                  if (dep.isNotEmpty) {
+                                                    subtitle =
+                                                        dep == 'SHOW DIVERS' &&
+                                                            team.isNotEmpty
+                                                        ? '$dep - $team'
+                                                        : dep;
+                                                  }
+                                                  if (subtitle.isEmpty)
+                                                    return const SizedBox.shrink();
+                                                  return Padding(
+                                                    padding:
+                                                        const EdgeInsets.only(
+                                                          top: 2,
+                                                        ),
+                                                    child: Text(
+                                                      subtitle,
+                                                      style: TextStyle(
+                                                        fontSize:
+                                                            (isPhone
+                                                                ? 10
+                                                                : 12) *
+                                                            scale,
+                                                        color: Colors.black54,
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                              ),
+                                            ],
                                           ),
                                         ),
                                         Expanded(
@@ -1156,12 +1210,64 @@ class _HistoryPageState extends State<HistoryPage> {
                                         final List<Widget> rowChildren = [
                                           Expanded(
                                             flex: 2,
-                                            child: Text(
-                                              s['name'] ?? "",
-                                              style: TextStyle(
-                                                fontSize:
-                                                    (isPhone ? 14 : 17) * scale,
-                                              ),
+                                            child: Builder(
+                                              builder: (_) {
+                                                final String rid =
+                                                    (s['diverId'] ?? '')
+                                                        .toString();
+                                                final roster =
+                                                    _cachedRoster[rid] ??
+                                                    const {};
+                                                final String dep =
+                                                    (roster['department'] ?? '')
+                                                        .toString();
+                                                final String team =
+                                                    (roster['team'] ?? '')
+                                                        .toString();
+                                                String subtitle = '';
+                                                if (dep.isNotEmpty) {
+                                                  subtitle =
+                                                      dep == 'SHOW DIVERS' &&
+                                                          team.isNotEmpty
+                                                      ? '$dep - $team'
+                                                      : dep;
+                                                }
+                                                return Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      s['name'] ?? "",
+                                                      style: TextStyle(
+                                                        fontSize:
+                                                            (isPhone
+                                                                ? 14
+                                                                : 17) *
+                                                            scale,
+                                                      ),
+                                                    ),
+                                                    if (subtitle.isNotEmpty)
+                                                      Padding(
+                                                        padding:
+                                                            const EdgeInsets.only(
+                                                              top: 2,
+                                                            ),
+                                                        child: Text(
+                                                          subtitle,
+                                                          style: TextStyle(
+                                                            fontSize:
+                                                                (isPhone
+                                                                    ? 10
+                                                                    : 12) *
+                                                                scale,
+                                                            color:
+                                                                Colors.black54,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                  ],
+                                                );
+                                              },
                                             ),
                                           ),
                                           Expanded(
@@ -1323,7 +1429,9 @@ class _HistoryPageState extends State<HistoryPage> {
           .collection('logs')
           .orderBy('datetime')
           .get();
-      _cachedChronologicalLogs = [for (final d in logsSnap.docs) d.data()];
+      _cachedChronologicalLogs = [
+        for (final d in logsSnap.docs) {'docId': d.id, ...d.data()},
+      ];
     } catch (_) {}
     try {
       final diversSnap = await FirebaseFirestore.instance

@@ -712,13 +712,49 @@ class _OperatorScreenState extends State<OperatorScreen> {
                             elevation: 0,
                           ),
                           onPressed: () => _toggleSelect(id),
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              tag == null
+                          child: Builder(
+                            builder: (_) {
+                              final rec = divers.firstWhere(
+                                (d) => d['id'] == id,
+                                orElse: () => const {},
+                              );
+                              final String dep = (rec['department'] ?? '')
+                                  .toString();
+                              final String team = (rec['team'] ?? '')
+                                  .toString();
+                              String subtitle = '';
+                              if (dep.isNotEmpty) {
+                                subtitle =
+                                    dep == 'SHOW DIVERS' && team.isNotEmpty
+                                    ? '$dep - $team'
+                                    : dep;
+                              }
+                              final String titleText = tag == null
                                   ? displayName
-                                  : "$displayName  (Tank ${tag.toString().padLeft(2, '0')})",
-                            ),
+                                  : "$displayName  (Tank ${tag.toString().padLeft(2, '0')})";
+                              return FittedBox(
+                                fit: BoxFit.scaleDown,
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Text(titleText),
+                                    if (subtitle.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Text(
+                                          subtitle,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.white70,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              );
+                            },
                           ),
                         ),
                         Positioned(

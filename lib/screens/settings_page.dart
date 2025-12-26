@@ -287,6 +287,63 @@ class _SettingsPageState extends State<SettingsPage> {
                   _snack("Select gas: Air or Nitrox.");
                   return;
                 }
+                // Enforce duplicate rules:
+                // - Same name within the same department is NOT allowed
+                // - For SHOW DIVERS, same name within the same team color is NOT allowed
+                // - Same name across different departments (or different team colors in SHOW DIVERS) is allowed
+                bool _clash() {
+                  final String n = newName.trim().toLowerCase();
+                  final String dep = (selectedDepartment).toString();
+                  final String depL = dep.toLowerCase();
+                  final String teamL = (selectedTeam ?? '')
+                      .toString()
+                      .toLowerCase();
+                  for (final d in _divers) {
+                    final String dId = (d['id'] ?? '').toString();
+                    if (isEdit && diverId != null && dId == diverId)
+                      continue; // ignore self when editing
+                    final String dn = (d['name'] ?? '')
+                        .toString()
+                        .trim()
+                        .toLowerCase();
+                    final String dd = (d['department'] ?? '')
+                        .toString()
+                        .toLowerCase();
+                    final String dt = (d['team'] ?? '')
+                        .toString()
+                        .toLowerCase();
+                    if (dn != n) continue;
+                    if (depL != 'show divers') {
+                      if (dd == depL)
+                        return true; // same department + same name
+                    } else {
+                      if (dd == depL && dt == teamL)
+                        return true; // same team color in SHOW DIVERS + same name
+                    }
+                  }
+                  return false;
+                }
+
+                if (_clash()) {
+                  if (selectedDepartment == 'SHOW DIVERS') {
+                    _snack(
+                      "A diver named '" +
+                          newName.trim() +
+                          "' already exists in SHOW DIVERS (team " +
+                          (selectedTeam ?? '') +
+                          ").",
+                    );
+                  } else {
+                    _snack(
+                      "A diver named '" +
+                          newName.trim() +
+                          "' already exists in " +
+                          selectedDepartment +
+                          ".",
+                    );
+                  }
+                  return;
+                }
                 if (isEdit) {
                   // Update diver record
                   if (diverId == null) {
