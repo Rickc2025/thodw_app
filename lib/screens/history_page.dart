@@ -810,8 +810,13 @@ class _HistoryPageState extends State<HistoryPage> {
   Widget build(BuildContext context) {
     final logs = getLogsFiltered();
     final checkedList = getCheckedInList();
-    final isPhone = MediaQuery.of(context).size.width < 600;
-    final scale = appScale(context);
+    final media = MediaQuery.of(context).size;
+    final isPhone = media.width < 600;
+    final baseScale = appScale(context);
+    // Boost scale on tablets to increase row height and font sizes.
+    final bool isTablet =
+        media.shortestSide >= 720; // e.g., iPad portrait >= 768
+    final double scale = baseScale * (isTablet ? 1.25 : 1.0);
     return Scaffold(
       body: Stack(
         children: [
