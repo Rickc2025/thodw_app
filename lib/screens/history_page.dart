@@ -88,6 +88,9 @@ class _HistoryPageState extends State<HistoryPage> {
 
     // Build sessions per diverId (ignore tank changes for pairing; store tank from IN).
     final Map<String, List<Map<String, dynamic>>> openStacks = {};
+    // Handle OUT logs that may appear before IN due to identical timestamps
+    // by temporarily storing them and pairing once the matching IN arrives.
+    final Map<String, List<Map<String, dynamic>>> pendingOuts = {};
     final List<Map<String, dynamic>> sessions = [];
 
     for (int i = 0; i < chronological.length; i++) {
@@ -100,6 +103,20 @@ class _HistoryPageState extends State<HistoryPage> {
       if (dt == null) continue;
 
       if (status == 'IN') {
+        // If we already received an OUT (same timestamp tie), pair immediately.
+        Map<String, dynamic>? matchedOut;
+        final outs = pendingOuts[diverId];
+        if (outs != null && outs.isNotEmpty) {
+          // Find the first OUT whose datetime >= IN datetime
+          for (int k = 0; k < outs.length; k++) {
+            final o = outs[k];
+            final oDt = _tryParseDT(o['datetime']);
+            if (oDt == null || dt.isAfter(oDt)) continue;
+            matchedOut = o;
+            outs.removeAt(k);
+            break;
+          }
+        }
         final session = <String, dynamic>{
           'diverId': diverId,
           'name': name,
@@ -112,10 +129,21 @@ class _HistoryPageState extends State<HistoryPage> {
           'logIndexIn': i,
           'logIndexOut': null,
         };
-        openStacks
-            .putIfAbsent(diverId, () => <Map<String, dynamic>>[])
-            .add(session);
-        sessions.add(session);
+        if (matchedOut != null) {
+          final oDt = _tryParseDT(matchedOut['datetime']);
+          session['datetimeOut'] = oDt?.toIso8601String();
+          session['gasOut'] = matchedOut['gasOut'];
+          session['logIndexOut'] = matchedOut['logIndex'];
+          if (oDt != null && oDt.isAfter(dt)) {
+            session['diveDuration'] = _formatDuration(oDt.difference(dt));
+          }
+          sessions.add(session);
+        } else {
+          openStacks
+              .putIfAbsent(diverId, () => <Map<String, dynamic>>[])
+              .add(session);
+          sessions.add(session);
+        }
       } else if (status == 'OUT') {
         final stack = openStacks[diverId];
         if (stack != null && stack.isNotEmpty) {
@@ -125,11 +153,17 @@ class _HistoryPageState extends State<HistoryPage> {
           last['gasOut'] = log['gasOut'];
           last['logIndexOut'] = i;
           final inDt = _tryParseDT(last['datetimeIn']);
-          if (inDt != null && dt.isAfter(inDt)) {
+          if (inDt != null && (dt.isAfter(inDt) || dt.isAtSameMomentAs(inDt))) {
             last['diveDuration'] = _formatDuration(dt.difference(inDt));
           }
         } else {
-          // Orphan OUT without a prior IN; ignore for session building.
+          // Store pending OUT to match when its IN appears later in iteration.
+          final list = pendingOuts.putIfAbsent(diverId, () => []);
+          list.add({
+            'datetime': dt.toIso8601String(),
+            'gasOut': log['gasOut'],
+            'logIndex': i,
+          });
         }
       }
     }
@@ -142,9 +176,39 @@ class _HistoryPageState extends State<HistoryPage> {
 
     List<Map<String, dynamic>> filtered = sessions;
 
-    // IN WATER filter: only sessions with no OUT yet
+    // IN WATER filter: only sessions with no OUT yet, and deduplicate by diverId keeping latest IN
     if (filterTab == "IN WATER") {
-      filtered = filtered.where((s) => (s['datetimeOut'] == null)).toList();
+      final Map<String, Map<String, dynamic>> latestOpenById = {};
+      for (final s in sessions) {
+        if (s['datetimeOut'] != null) continue;
+        final String did = (s['diverId'] ?? '').toString();
+        if (did.isEmpty) continue;
+        DateTime? dt = _tryParseDT(s['datetimeIn']);
+        if (dt == null) dt = DateTime.fromMillisecondsSinceEpoch(0);
+        final prev = latestOpenById[did];
+        DateTime? prevDt = _tryParseDT(prev?['datetimeIn']);
+        if (prevDt == null) prevDt = DateTime.fromMillisecondsSinceEpoch(0);
+        if (prev == null || dt.isAfter(prevDt)) {
+          latestOpenById[did] = s;
+        }
+      }
+      filtered = latestOpenById.values.toList();
+    } else if (filterTab == "ALL" && widget.showTabs) {
+      // On the Log screen (tabs visible), show only today's sessions
+      // so the New Day Reset results in an empty ALL list without
+      // touching historical data. The History view (showTabs=false)
+      // continues to show full history.
+      final now = DateTime.now();
+      bool sameDay(DateTime? dt) =>
+          dt != null &&
+          dt.year == now.year &&
+          dt.month == now.month &&
+          dt.day == now.day;
+      filtered = sessions.where((s) {
+        final DateTime? inDt = _tryParseDT(s['datetimeIn']);
+        final DateTime? outDt = _tryParseDT(s['datetimeOut']);
+        return sameDay(inDt) || sameDay(outDt);
+      }).toList();
     }
 
     // Sort: for IN WATER tab show alphabetical; otherwise show by recency.
@@ -174,6 +238,15 @@ class _HistoryPageState extends State<HistoryPage> {
     String displayName, {
     int? tag,
   }) async {
+    // Prevent duplicate IN logs if already IN WATER
+    if (StateCache.diverIsInWater(diverId)) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('$displayName is already IN WATER')),
+        );
+      }
+      return;
+    }
     final now = DateTime.now().toIso8601String();
     await StateCache.addLogs([
       {
@@ -285,6 +358,52 @@ class _HistoryPageState extends State<HistoryPage> {
     if (!selected) return Colors.black;
     if (t == "IN WATER") return Colors.white; // ensure contrast on orange
     return Colors.white;
+  }
+
+  // Map team color names to display colors for subtitle.
+  Color? _teamColor(String team) {
+    switch (team.trim().toUpperCase()) {
+      case 'BLUE':
+        return Colors.blue[700];
+      case 'RED':
+        return Colors.red[700];
+      case 'GREEN':
+        return Colors.green[700];
+      case 'WHITE':
+        // Distinguish from default black54
+        return Colors.grey[600];
+      default:
+        return null;
+    }
+  }
+
+  // Build colored subtitle: SHOW DIVERS - <TEAM> with team colored.
+  Widget _buildColoredSubtitle(
+    String dep,
+    String team,
+    bool isPhone,
+    double scale,
+  ) {
+    final baseStyle = TextStyle(
+      fontSize: (isPhone ? 10 : 12) * scale,
+      color: Colors.black54,
+    );
+    if (dep.isEmpty) return const SizedBox.shrink();
+    if (dep == 'SHOW DIVERS' && team.isNotEmpty) {
+      final Color? tc = _teamColor(team);
+      return Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(text: 'SHOW DIVERS - ', style: baseStyle),
+            TextSpan(
+              text: team,
+              style: baseStyle.copyWith(color: tc ?? baseStyle.color),
+            ),
+          ],
+        ),
+      );
+    }
+    return Text(dep, style: baseStyle);
   }
 
   Widget _tabButton(String t) {
@@ -660,13 +779,29 @@ class _HistoryPageState extends State<HistoryPage> {
       ),
     );
     if (result != null && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            "Tank updated for $name to ${result.toString().padLeft(2, '0')}",
-          ),
-        ),
-      );
+      final tagStr = result.toString().padLeft(2, '0');
+      // Find other checked-in divers with the same tank
+      final ids = StateCache.checkedInIds();
+      final List<String> othersWithSameTag = [];
+      for (final oid in ids) {
+        if (oid == id) continue;
+        final t = StateCache.checkedInTank(oid);
+        if (t == result) {
+          final roster = _cachedRoster[oid] ?? const {};
+          final oname = (roster['name'] ?? oid).toString();
+          othersWithSameTag.add(oname);
+        }
+      }
+      String msg = "Tank updated for $name to $tagStr.";
+      if (othersWithSameTag.isNotEmpty) {
+        if (othersWithSameTag.length == 1) {
+          msg += " Note: ${othersWithSameTag.first} also uses tank $tagStr.";
+        } else {
+          msg +=
+              " Note: ${othersWithSameTag.join(', ')} also use tank $tagStr.";
+        }
+      }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
       setState(() {});
     }
   }
@@ -872,6 +1007,7 @@ class _HistoryPageState extends State<HistoryPage> {
                                                   fontSize:
                                                       (isPhone ? 14 : 17) *
                                                       scale,
+                                                  fontWeight: FontWeight.bold,
                                                 ),
                                               ),
                                               Builder(
@@ -882,32 +1018,21 @@ class _HistoryPageState extends State<HistoryPage> {
                                                   final String team =
                                                       (item['team'] ?? '')
                                                           .toString();
-                                                  String subtitle = '';
-                                                  if (dep.isNotEmpty) {
-                                                    subtitle =
-                                                        dep == 'SHOW DIVERS' &&
-                                                            team.isNotEmpty
-                                                        ? '$dep - $team'
-                                                        : dep;
-                                                  }
-                                                  if (subtitle.isEmpty)
+                                                  if (dep.isEmpty) {
                                                     return const SizedBox.shrink();
+                                                  }
                                                   return Padding(
                                                     padding:
                                                         const EdgeInsets.only(
                                                           top: 2,
                                                         ),
-                                                    child: Text(
-                                                      subtitle,
-                                                      style: TextStyle(
-                                                        fontSize:
-                                                            (isPhone
-                                                                ? 10
-                                                                : 12) *
-                                                            scale,
-                                                        color: Colors.black54,
-                                                      ),
-                                                    ),
+                                                    child:
+                                                        _buildColoredSubtitle(
+                                                          dep,
+                                                          team,
+                                                          isPhone,
+                                                          scale,
+                                                        ),
                                                   );
                                                 },
                                               ),
@@ -1224,14 +1349,6 @@ class _HistoryPageState extends State<HistoryPage> {
                                                 final String team =
                                                     (roster['team'] ?? '')
                                                         .toString();
-                                                String subtitle = '';
-                                                if (dep.isNotEmpty) {
-                                                  subtitle =
-                                                      dep == 'SHOW DIVERS' &&
-                                                          team.isNotEmpty
-                                                      ? '$dep - $team'
-                                                      : dep;
-                                                }
                                                 return Column(
                                                   crossAxisAlignment:
                                                       CrossAxisAlignment.start,
@@ -1244,26 +1361,23 @@ class _HistoryPageState extends State<HistoryPage> {
                                                                 ? 14
                                                                 : 17) *
                                                             scale,
+                                                        fontWeight:
+                                                            FontWeight.bold,
                                                       ),
                                                     ),
-                                                    if (subtitle.isNotEmpty)
+                                                    if (dep.isNotEmpty)
                                                       Padding(
                                                         padding:
                                                             const EdgeInsets.only(
                                                               top: 2,
                                                             ),
-                                                        child: Text(
-                                                          subtitle,
-                                                          style: TextStyle(
-                                                            fontSize:
-                                                                (isPhone
-                                                                    ? 10
-                                                                    : 12) *
-                                                                scale,
-                                                            color:
-                                                                Colors.black54,
-                                                          ),
-                                                        ),
+                                                        child:
+                                                            _buildColoredSubtitle(
+                                                              dep,
+                                                              team,
+                                                              isPhone,
+                                                              scale,
+                                                            ),
                                                       ),
                                                   ],
                                                 );

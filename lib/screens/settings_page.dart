@@ -408,7 +408,7 @@ class _SettingsPageState extends State<SettingsPage> {
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
             SizedBox(height: 2),
-            Text('Updated: 2025-12-22 at 11:54 PM'),
+            Text('Updated: 2026-jan-01 at 12:07 PM'),
             SizedBox(height: 10),
             Text('Developed by: Ricardo Costa Silva'),
             SizedBox(height: 6),

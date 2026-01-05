@@ -45,41 +45,29 @@ class StateCache {
         ..addAll(next);
     });
 
-    // Keep only last log per name|tag
+    // Rebuild latest status per diverId on each snapshot. We read logs in
+    // descending datetime order, so the first occurrence of a diverId is the
+    // latest status regardless of timestamp parsing.
     _logsSub = db
         .collection('logs')
         .orderBy('datetime', descending: true)
         .snapshots()
         .listen((snap) {
+          final Map<String, Map<String, dynamic>> latestById = {};
           for (final d in snap.docs) {
             final data = d.data();
-            final key = "${data['diverId'] ?? ''}|${data['tag'] ?? ''}";
-            // Always update the latest log for this name|tag so counts refresh across devices
-            _lastLogByKey[key] = data;
             final diverId = (data['diverId'] ?? '').toString();
-            final dtStr = (data['datetime'] ?? '').toString();
-            DateTime? dt;
-            try {
-              dt = DateTime.parse(dtStr);
-            } catch (_) {
-              dt = null;
-            }
-            if (diverId.isNotEmpty) {
-              final prev = _latestLogById[diverId];
-              DateTime? prevDt;
-              try {
-                prevDt = prev == null
-                    ? null
-                    : DateTime.parse((prev['datetime'] ?? '').toString());
-              } catch (_) {
-                prevDt = null;
-              }
-              if (prev == null ||
-                  (dt != null && (prevDt == null || dt.isAfter(prevDt)))) {
-                _latestLogById[diverId] = data;
-              }
-            }
+            final tagStr = (data['tag'] ?? '').toString();
+            final key = "$diverId|$tagStr";
+            // Track last log per diverId|tag for editing/use cases.
+            _lastLogByKey[key] = data;
+            if (diverId.isEmpty) continue;
+            // First hit wins due to descending order = latest
+            latestById.putIfAbsent(diverId, () => data);
           }
+          _latestLogById
+            ..clear()
+            ..addAll(latestById);
         });
   }
 
@@ -109,14 +97,14 @@ class StateCache {
   static bool diverIsInWater(String diverId) {
     final m = _instance._latestLogById[diverId];
     if (m == null) return false;
-    final status = (m['status'] ?? '').toString().toUpperCase();
+    final status = (m['status'] ?? '').toString().trim().toUpperCase();
     return status == 'IN';
   }
 
   static int currentlyIn() {
     int count = 0;
     for (final v in _instance._latestLogById.values) {
-      final status = (v['status'] ?? '').toString().toUpperCase();
+      final status = (v['status'] ?? '').toString().trim().toUpperCase();
       if (status == 'IN') count++;
     }
     return count;
