@@ -646,13 +646,167 @@ class _OperatorScreenState extends State<OperatorScreen> {
     );
   }
 
+  // Build a segmented diver tile where the status (IN/OUT) is part of the button
+  // as a colored right-hand segment to avoid overlapping on small screens.
+  Widget _segmentedDiverButton({
+    required String diverId,
+    required String title,
+    String? subtitle,
+    required bool waterIn,
+    required bool selected,
+    required double scale,
+    double verticalFactor = 1.0,
+    required VoidCallback onTap,
+  }) {
+    final Color baseBg = selected ? Colors.green : Colors.blueGrey;
+    final Color statusBg = waterIn
+        ? (Colors.orange[700] ?? Colors.orange)
+        : Colors.black87;
+    final String statusTxt = waterIn ? 'IN' : 'OUT';
+    final double radius = 18 * scale;
+    return ElevatedButton(
+      style: ElevatedButton.styleFrom(
+        minimumSize: Size(112 * scale, 52 * scale * verticalFactor),
+        backgroundColor: baseBg,
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(radius),
+        ),
+        textStyle: TextStyle(
+          fontSize: (MediaQuery.of(context).size.width < 600 ? 16 : 18) * scale,
+          fontWeight: FontWeight.bold,
+        ),
+        elevation: 0,
+        padding: EdgeInsets.zero,
+      ),
+      onPressed: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(radius),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              flex: 2,
+              child: Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: 12 * scale,
+                  vertical: 8 * scale,
+                ),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title),
+                      if (subtitle != null && subtitle.isNotEmpty)
+                        Padding(
+                          padding: EdgeInsets.only(top: 2 * verticalFactor),
+                          child: Builder(
+                            builder: (_) {
+                              final baseStyle = TextStyle(
+                                fontSize: 13 * scale,
+                                color: Colors.white70,
+                                fontWeight: FontWeight.w600,
+                              );
+                              // Expect pattern like "SHOW DIVERS - BLUE"; color the team word.
+                              final parts = subtitle.split(' - ');
+                              if (parts.length == 2) {
+                                final left = parts[0];
+                                final team = parts[1].trim().toUpperCase();
+                                Color teamColor;
+                                switch (team) {
+                                  case 'BLUE':
+                                    teamColor = Colors.blue[300] ?? Colors.blue;
+                                    break;
+                                  case 'GREEN':
+                                    teamColor =
+                                        Colors.green[300] ?? Colors.green;
+                                    break;
+                                  case 'RED':
+                                    teamColor = Colors.red[300] ?? Colors.red;
+                                    break;
+                                  case 'WHITE':
+                                    teamColor = Colors.white;
+                                    break;
+                                  default:
+                                    teamColor = Colors.white70;
+                                }
+                                return Text.rich(
+                                  TextSpan(
+                                    children: [
+                                      TextSpan(
+                                        text: '$left - ',
+                                        style: baseStyle,
+                                      ),
+                                      TextSpan(
+                                        text: team,
+                                        style: baseStyle.copyWith(
+                                          color: teamColor,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }
+                              // Fallback: render as a single-colored subtitle
+                              return Text(subtitle, style: baseStyle);
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Expanded(
+              flex: 1,
+              child: Container(
+                alignment: Alignment.center,
+                color: statusBg,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8 * scale),
+                    child: Text(
+                      statusTxt,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize:
+                            (MediaQuery.of(context).size.width < 600
+                                ? 20
+                                : 22) *
+                            scale,
+                        letterSpacing: 1.0,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isPhone = MediaQuery.of(context).size.width < 600;
+    final screenSize = MediaQuery.of(context).size;
+    final isPhone = screenSize.width < 600;
+    final bool isTablet = !isPhone && screenSize.width < 1100; // iPad range
     final scale = appScale(context);
+    final double tileScale = isTablet
+        ? scale * 1.6
+        : scale; // slightly smaller overall
+    final double verticalFactor = isTablet ? (2.0 / 3.0) : 1.0; // ~1/3 thinner
 
-    final crossAxisCount = isPhone ? 2 : 4;
-    final childAspect = isPhone ? 1.8 : 2.45;
+    final crossAxisCount = isPhone ? 2 : (isTablet ? 2 : 4);
+    final childAspect = isPhone
+        ? 2.2
+        : (isTablet ? 2.7 : 3.0); // thinner tiles on tablets
     final gridSpacing = 12.0 * scale;
 
     final showDiversMode = selectedDepartmentFilter == null;
@@ -695,93 +849,30 @@ class _OperatorScreenState extends State<OperatorScreen> {
                     )['name'];
                     // Use neutral color for ALL listing
                     final Color bg = isSel ? Colors.green : Colors.blueGrey;
-                    return Stack(
-                      children: [
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            minimumSize: Size(120 * scale, 60 * scale),
-                            backgroundColor: bg,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(22 * scale),
-                            ),
-                            textStyle: TextStyle(
-                              fontSize: (isPhone ? 14 : 16) * scale,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            elevation: 0,
-                          ),
-                          onPressed: () => _toggleSelect(id),
-                          child: Builder(
-                            builder: (_) {
-                              final rec = divers.firstWhere(
-                                (d) => d['id'] == id,
-                                orElse: () => const {},
-                              );
-                              final String dep = (rec['department'] ?? '')
-                                  .toString();
-                              final String team = (rec['team'] ?? '')
-                                  .toString();
-                              String subtitle = '';
-                              if (dep.isNotEmpty) {
-                                subtitle =
-                                    dep == 'SHOW DIVERS' && team.isNotEmpty
-                                    ? '$dep - $team'
-                                    : dep;
-                              }
-                              final String titleText = tag == null
-                                  ? displayName
-                                  : "$displayName  (Tank ${tag.toString().padLeft(2, '0')})";
-                              return FittedBox(
-                                fit: BoxFit.scaleDown,
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    Text(titleText),
-                                    if (subtitle.isNotEmpty)
-                                      Padding(
-                                        padding: const EdgeInsets.only(top: 2),
-                                        child: Text(
-                                          subtitle,
-                                          style: const TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.white70,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                        Positioned(
-                          right: 10,
-                          top: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: waterIn
-                                  ? Colors.orange[600]
-                                  : Colors.black54,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              waterIn ? "IN" : "OUT",
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                    final rec = divers.firstWhere(
+                      (d) => d['id'] == id,
+                      orElse: () => const {},
+                    );
+                    final String dep = (rec['department'] ?? '').toString();
+                    final String team = (rec['team'] ?? '').toString();
+                    String subtitle = '';
+                    if (dep.isNotEmpty) {
+                      subtitle = dep == 'SHOW DIVERS' && team.isNotEmpty
+                          ? '$dep - $team'
+                          : dep;
+                    }
+                    final String titleText = tag == null
+                        ? displayName
+                        : "$displayName  (Tank ${tag.toString().padLeft(2, '0')})";
+                    return _segmentedDiverButton(
+                      diverId: id,
+                      title: titleText,
+                      subtitle: subtitle,
+                      waterIn: waterIn,
+                      selected: isSel,
+                      scale: tileScale,
+                      verticalFactor: verticalFactor,
+                      onTap: () => _toggleSelect(id),
                     );
                   },
                 ),
@@ -821,57 +912,18 @@ class _OperatorScreenState extends State<OperatorScreen> {
                     final bool isSel = selectedDivers.contains(id);
                     final Color bg = isSel ? Colors.green : Colors.blueGrey;
                     final int? tag = StateCache.checkedInTank(id);
-                    return Stack(
-                      children: [
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            minimumSize: Size(120 * scale, 60 * scale),
-                            backgroundColor: bg,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(22 * scale),
-                            ),
-                            textStyle: TextStyle(
-                              fontSize: (isPhone ? 14 : 16) * scale,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            elevation: 0,
-                          ),
-                          onPressed: () => _toggleSelect(id),
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              tag == null
-                                  ? name
-                                  : "$name  (Tank ${tag.toString().padLeft(2, '0')})",
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          right: 10,
-                          top: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: waterIn
-                                  ? Colors.orange[600]
-                                  : Colors.black54,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              waterIn ? "IN" : "OUT",
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                    final String titleText = tag == null
+                        ? name
+                        : "$name  (Tank ${tag.toString().padLeft(2, '0')})";
+                    return _segmentedDiverButton(
+                      diverId: id,
+                      title: titleText,
+                      waterIn: waterIn,
+                      selected: isSel,
+                      subtitle: '',
+                      scale: tileScale,
+                      verticalFactor: verticalFactor,
+                      onTap: () => _toggleSelect(id),
                     );
                   },
                 ),
@@ -914,57 +966,18 @@ class _OperatorScreenState extends State<OperatorScreen> {
                     final Color bg = isSel
                         ? Colors.green
                         : Colors.blueGrey; // neutral
-                    return Stack(
-                      children: [
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            minimumSize: Size(120 * scale, 60 * scale),
-                            backgroundColor: bg,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(22 * scale),
-                            ),
-                            textStyle: TextStyle(
-                              fontSize: (isPhone ? 14 : 16) * scale,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            elevation: 0,
-                          ),
-                          onPressed: () => _toggleSelect(id),
-                          child: FittedBox(
-                            fit: BoxFit.scaleDown,
-                            child: Text(
-                              tag == null
-                                  ? displayName
-                                  : "$displayName  (Tank ${tag.toString().padLeft(2, '0')})",
-                            ),
-                          ),
-                        ),
-                        Positioned(
-                          right: 10,
-                          top: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: waterIn
-                                  ? Colors.orange[600]
-                                  : Colors.black54,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              waterIn ? "IN" : "OUT",
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                    final String titleText = tag == null
+                        ? displayName
+                        : "$displayName  (Tank ${tag.toString().padLeft(2, '0')})";
+                    return _segmentedDiverButton(
+                      diverId: id,
+                      title: titleText,
+                      waterIn: waterIn,
+                      selected: isSel,
+                      subtitle: '',
+                      scale: tileScale,
+                      verticalFactor: verticalFactor,
+                      onTap: () => _toggleSelect(id),
                     );
                   },
                 ),

@@ -188,6 +188,40 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
     return divers;
   }
 
+  // Checked-in divers for the current context (department or SHOW DIVERS team)
+  List<Map<String, dynamic>> get checkedInDiversForContext {
+    final ids = StateCache.checkedInIds();
+    final List<Map<String, dynamic>> out = [];
+    for (final id in ids) {
+      // Find roster record for id
+      final rec = divers.firstWhere(
+        (d) => (d['id'] ?? '') == id,
+        orElse: () => const {},
+      );
+      if (rec.isEmpty) continue;
+      // Apply filters for context
+      if (isShowDivers) {
+        if ((rec['team'] ?? '') != selectedTeam) continue;
+      } else if (isOtherAggregated) {
+        if (selectedSubDepartment == null) continue;
+        if ((rec['department'] ?? '') != selectedSubDepartment) continue;
+      } else {
+        if ((rec['department'] ?? '') != widget.department) continue;
+      }
+      out.add({
+        'id': id,
+        'name': (rec['name'] ?? id).toString(),
+        'tag': StateCache.checkedInTank(id),
+      });
+    }
+    out.sort(
+      (a, b) => (a['name'] as String).toLowerCase().compareTo(
+        (b['name'] as String).toLowerCase(),
+      ),
+    );
+    return out;
+  }
+
   void _snack(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
@@ -626,7 +660,94 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
                                       ),
                                     ),
                                   ),
-                                const Spacer(),
+                                Padding(
+                                  padding: EdgeInsets.only(top: 12 * scale),
+                                  child: Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Text(
+                                      'Checked-In',
+                                      style: TextStyle(
+                                        fontSize: (isPhone ? 16 : 18) * scale,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.blueGrey[700],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Builder(
+                                    builder: (_) {
+                                      final data = checkedInDiversForContext;
+                                      if (isOtherAggregated &&
+                                          selectedSubDepartment == null) {
+                                        return Center(
+                                          child: Text(
+                                            'Select a department to view.',
+                                            style: TextStyle(
+                                              fontSize:
+                                                  (isPhone ? 14 : 16) * scale,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                      if (data.isEmpty) {
+                                        return Center(
+                                          child: Text(
+                                            'No divers currently checked in.',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              fontSize:
+                                                  (isPhone ? 14 : 16) * scale,
+                                              color: Colors.grey[600],
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                      return ListView.separated(
+                                        itemCount: data.length,
+                                        separatorBuilder: (_, __) =>
+                                            SizedBox(height: 6 * scale),
+                                        itemBuilder: (_, i) {
+                                          final m = data[i];
+                                          final name = (m['name'] ?? '')
+                                              .toString();
+                                          final tag = m['tag'] as int?;
+                                          final tankStr = tag == null
+                                              ? '--'
+                                              : tag.toString().padLeft(2, '0');
+                                          return Row(
+                                            children: [
+                                              Expanded(
+                                                child: Text(
+                                                  name,
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                  style: TextStyle(
+                                                    fontSize:
+                                                        (isPhone ? 14 : 16) *
+                                                        scale,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                                ),
+                                              ),
+                                              Text(
+                                                'Tank $tankStr',
+                                                style: TextStyle(
+                                                  fontSize:
+                                                      (isPhone ? 14 : 16) *
+                                                      scale,
+                                                  color: Colors.blueGrey[700],
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ],
+                                          );
+                                        },
+                                      );
+                                    },
+                                  ),
+                                ),
                                 SizedBox(
                                   width: (isPhone ? 160 : 200) * scale,
                                   height: (isPhone ? 60 : 70) * scale,
