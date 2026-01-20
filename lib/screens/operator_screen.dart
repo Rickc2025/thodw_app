@@ -8,6 +8,7 @@ import '../core/constants.dart';
 import '../core/utils.dart';
 import '../services/state_cache.dart';
 import '../widgets/top_alert.dart';
+import '../widgets/top_snack.dart';
 import 'history_page.dart';
 
 class OperatorScreen extends StatefulWidget {
@@ -201,9 +202,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
   }
 
   void _snack(String m) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(m), duration: const Duration(seconds: 2)),
-    );
+    TopSnack.show(context, m, duration: const Duration(seconds: 2));
   }
 
   Widget _buildSelectedPanel(bool isPhone, double scale) {

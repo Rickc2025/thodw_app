@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../core/utils.dart';
 import '../services/state_cache.dart';
+import '../widgets/top_snack.dart';
 
 class ChangeTagScreen extends StatefulWidget {
   final String diverId;
@@ -22,7 +23,7 @@ class _ChangeTagScreenState extends State<ChangeTagScreen> {
   final TextEditingController _tankController = TextEditingController();
 
   void _snack(String m) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+    TopSnack.show(context, m, duration: const Duration(seconds: 2));
   }
 
   void _confirm() async {

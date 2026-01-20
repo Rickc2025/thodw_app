@@ -9,6 +9,7 @@ import '../core/constants.dart';
 import '../core/departments.dart';
 import '../core/utils.dart';
 import '../widgets/top_alert.dart';
+import '../widgets/top_snack.dart';
 import '../app.dart';
 import 'history_page.dart';
 
@@ -77,9 +78,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _snack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), duration: const Duration(seconds: 1)),
-    );
+    TopSnack.show(context, msg, duration: const Duration(seconds: 2));
   }
 
   void _showAddDialog() {

@@ -9,6 +9,7 @@ import '../core/navigation.dart';
 import '../core/utils.dart';
 import '../services/state_cache.dart';
 import '../widgets/top_alert.dart';
+import '../widgets/top_snack.dart';
 import 'history_page.dart';
 
 class CheckInNamesScreen2 extends StatefulWidget {
@@ -223,7 +224,7 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
   }
 
   void _snack(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    TopSnack.show(context, msg, duration: const Duration(seconds: 2));
   }
 
   void _cancel() {
@@ -704,10 +705,8 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
                                           ),
                                         );
                                       }
-                                      return ListView.separated(
+                                      return ListView.builder(
                                         itemCount: data.length,
-                                        separatorBuilder: (_, __) =>
-                                            SizedBox(height: 6 * scale),
                                         itemBuilder: (_, i) {
                                           final m = data[i];
                                           final name = (m['name'] ?? '')
@@ -716,32 +715,53 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
                                           final tankStr = tag == null
                                               ? '--'
                                               : tag.toString().padLeft(2, '0');
-                                          return Row(
-                                            children: [
-                                              Expanded(
-                                                child: Text(
-                                                  name,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
+                                          final Color rowColor = i.isEven
+                                              ? (Colors.blueGrey[50] ??
+                                                    const Color(0x0D000000))
+                                              : Colors.transparent;
+                                          return Container(
+                                            margin: EdgeInsets.symmetric(
+                                              vertical: 3 * scale,
+                                            ),
+                                            padding: EdgeInsets.symmetric(
+                                              horizontal: 8 * scale,
+                                              vertical: 6 * scale,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: rowColor,
+                                              borderRadius:
+                                                  BorderRadius.circular(
+                                                    8 * scale,
+                                                  ),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    name,
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                    style: TextStyle(
+                                                      fontSize:
+                                                          (isPhone ? 14 : 16) *
+                                                          scale,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ),
+                                                Text(
+                                                  'Tank $tankStr',
                                                   style: TextStyle(
                                                     fontSize:
                                                         (isPhone ? 14 : 16) *
                                                         scale,
+                                                    color: Colors.blueGrey[700],
                                                     fontWeight: FontWeight.w600,
                                                   ),
                                                 ),
-                                              ),
-                                              Text(
-                                                'Tank $tankStr',
-                                                style: TextStyle(
-                                                  fontSize:
-                                                      (isPhone ? 14 : 16) *
-                                                      scale,
-                                                  color: Colors.blueGrey[700],
-                                                  fontWeight: FontWeight.w600,
-                                                ),
-                                              ),
-                                            ],
+                                              ],
+                                            ),
                                           );
                                         },
                                       );
