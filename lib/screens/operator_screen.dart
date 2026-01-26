@@ -29,6 +29,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
   // When a non-Show-Divers department is selected, this is set.
   String? selectedDepartmentFilter;
   bool selectedAll = true; // default to show ALL checked-in divers
+  bool selectedShowDiversOnly = false; // new tab: SHOW DIVERS (all teams)
 
   final Set<String> selectedDivers = {}; // diverIds (any department)
   // Optional gas values per selected diver (bars). In: default 200 for OUT divers, Out: default null ('-').
@@ -248,7 +249,8 @@ class _OperatorScreenState extends State<OperatorScreen> {
                         DataColumn(label: Text('')),
                       ],
                       rows: [
-                        for (final id in selectedDivers.toList())
+                        // Show most recent selections at the top
+                        for (final id in selectedDivers.toList().reversed)
                           DataRow(
                             cells: [
                               DataCell(
@@ -808,7 +810,12 @@ class _OperatorScreenState extends State<OperatorScreen> {
         : (isTablet ? 2.7 : 3.0); // thinner tiles on tablets
     final gridSpacing = 12.0 * scale;
 
-    final showDiversMode = selectedDepartmentFilter == null;
+    // Distinguish between team mode and the new "SHOW DIVERS" tab.
+    final bool showDiversOnlyMode = selectedShowDiversOnly;
+    final bool teamMode =
+        !selectedAll &&
+        selectedDepartmentFilter == null &&
+        !selectedShowDiversOnly;
 
     // Team color filters removed; only department filters and ALL remain.
 
@@ -879,7 +886,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
           ),
         );
       }
-    } else if (showDiversMode) {
+    } else if (teamMode) {
       final list = checkedInDiversForTeam;
       if (list.isEmpty) {
         leftTiles.add(
@@ -920,6 +927,71 @@ class _OperatorScreenState extends State<OperatorScreen> {
                       waterIn: waterIn,
                       selected: isSel,
                       subtitle: '',
+                      scale: tileScale,
+                      verticalFactor: verticalFactor,
+                      onTap: () => _toggleSelect(id),
+                    );
+                  },
+                ),
+            ],
+          ),
+        );
+      }
+    } else if (showDiversOnlyMode) {
+      // SHOW DIVERS tab (all teams under the SHOW DIVERS department)
+      final showDiversAll = divers
+          .where((d) => (d['department'] ?? '') == 'SHOW DIVERS')
+          .where((d) => StateCache.isCheckedIn((d['id'] ?? '').toString()))
+          .toList();
+      // Sort by name for readability
+      showDiversAll.sort(
+        (a, b) => ((a['name'] ?? '').toString()).toLowerCase().compareTo(
+          ((b['name'] ?? '').toString()).toLowerCase(),
+        ),
+      );
+      if (showDiversAll.isEmpty) {
+        leftTiles.add(
+          Center(
+            child: Text(
+              "No divers checked in.",
+              style: TextStyle(
+                fontSize: (isPhone ? 18 : 22) * scale,
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        );
+      } else {
+        leftTiles.add(
+          GridView.count(
+            crossAxisCount: crossAxisCount,
+            mainAxisSpacing: gridSpacing,
+            crossAxisSpacing: gridSpacing,
+            childAspectRatio: childAspect,
+            children: [
+              for (final d in showDiversAll)
+                Builder(
+                  builder: (_) {
+                    final String id = (d['id'] ?? '').toString();
+                    final String name = (d['name'] ?? '').toString();
+                    final String team = (d['team'] ?? '').toString();
+                    final bool waterIn = StateCache.diverIsInWater(id);
+                    final bool isSel = selectedDivers.contains(id);
+                    final int? tag = StateCache.checkedInTank(id);
+                    final String titleText = tag == null
+                        ? name
+                        : "$name  (Tank ${tag.toString().padLeft(2, '0')})";
+                    // Provide colored subtitle for SHOW DIVERS entries
+                    final String subtitle = team.isNotEmpty
+                        ? 'SHOW DIVERS - ${team.toUpperCase()}'
+                        : 'SHOW DIVERS';
+                    return _segmentedDiverButton(
+                      diverId: id,
+                      title: titleText,
+                      subtitle: subtitle,
+                      waterIn: waterIn,
+                      selected: isSel,
                       scale: tileScale,
                       verticalFactor: verticalFactor,
                       onTap: () => _toggleSelect(id),
@@ -988,8 +1060,9 @@ class _OperatorScreenState extends State<OperatorScreen> {
 
     final availableTeams = teamsWithCheckins;
     final showTeamGroup = availableTeams.isNotEmpty;
+    final bool hasShowDivers = showTeamGroup; // same source: SHOW DIVERS teams
     final showDeptGroup = nonShowDepartmentsWithCheckins.isNotEmpty;
-    final showAnyFilters = showTeamGroup || showDeptGroup;
+    final showAnyFilters = showTeamGroup || showDeptGroup || hasShowDivers;
 
     return Scaffold(
       body: Stack(
@@ -1059,6 +1132,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                             setState(() {
                               selectedAll = true;
                               selectedDepartmentFilter = null;
+                              selectedShowDiversOnly = false;
                             });
                           },
                           style: ElevatedButton.styleFrom(
@@ -1081,6 +1155,35 @@ class _OperatorScreenState extends State<OperatorScreen> {
                           child: const Text('ALL'),
                         ),
 
+                        if (hasShowDivers)
+                          ElevatedButton(
+                            onPressed: () {
+                              setState(() {
+                                selectedAll = false;
+                                selectedDepartmentFilter = null;
+                                selectedShowDiversOnly = true;
+                              });
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: selectedShowDiversOnly
+                                  ? Colors.blueGrey[700]
+                                  : Colors.grey[100],
+                              foregroundColor: selectedShowDiversOnly
+                                  ? Colors.white
+                                  : Colors.black,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(18 * scale),
+                              ),
+                              elevation: 0,
+                              minimumSize: Size(160 * scale, 48 * scale),
+                              textStyle: TextStyle(
+                                fontSize: 14 * scale,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            child: const Text('SHOW DIVERS'),
+                          ),
+
                         if (showTeamGroup)
                           for (final t in availableTeams)
                             Builder(
@@ -1088,7 +1191,8 @@ class _OperatorScreenState extends State<OperatorScreen> {
                                 final bool isSelected =
                                     (!selectedAll &&
                                     selectedDepartmentFilter == null &&
-                                    selectedTeam == t);
+                                    selectedTeam == t &&
+                                    !selectedShowDiversOnly);
                                 final Color teamBg = isSelected
                                     ? _teamColor(t)
                                     : (Colors.grey[100]!);
@@ -1102,6 +1206,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                                     setState(() {
                                       selectedAll = false;
                                       selectedDepartmentFilter = null;
+                                      selectedShowDiversOnly = false;
                                       selectedTeam = t;
                                     });
                                   },
@@ -1140,6 +1245,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                                 setState(() {
                                   selectedAll = false;
                                   selectedDepartmentFilter = dep;
+                                  selectedShowDiversOnly = false;
                                 });
                               },
                               style: ElevatedButton.styleFrom(

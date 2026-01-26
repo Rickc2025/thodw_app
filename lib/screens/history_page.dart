@@ -7,6 +7,7 @@ import '../core/utils.dart';
 import '../services/state_cache.dart';
 import '../utils/exporter/exporter.dart';
 import '../widgets/top_alert.dart';
+import '../widgets/top_snack.dart';
 import 'change_tag_screen.dart';
 
 class HistoryPage extends StatefulWidget {
@@ -241,9 +242,7 @@ class _HistoryPageState extends State<HistoryPage> {
     // Prevent duplicate IN logs if already IN WATER
     if (StateCache.diverIsInWater(diverId)) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$displayName is already IN WATER')),
-        );
+        TopSnack.show(context, '$displayName is already IN WATER');
       }
       return;
     }
@@ -262,9 +261,7 @@ class _HistoryPageState extends State<HistoryPage> {
     _refreshCaches();
     if (mounted) setState(() {});
     if (context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Checked IN $displayName')));
+      TopSnack.show(context, 'Checked IN $displayName');
     }
   }
 
@@ -290,9 +287,7 @@ class _HistoryPageState extends State<HistoryPage> {
     _refreshCaches();
     if (mounted) setState(() {});
     if (context.mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Checked OUT $displayName')));
+      TopSnack.show(context, 'Checked OUT $displayName');
     }
   }
 
@@ -767,9 +762,7 @@ class _HistoryPageState extends State<HistoryPage> {
 
   Future<void> _openChangeTag(String id, String name) async {
     if (StateCache.diverIsInWater(id)) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text("Change tank after OUT.")));
+      TopSnack.show(context, 'Change tank after OUT.');
       return;
     }
     final result = await Navigator.push<int>(
@@ -801,7 +794,7 @@ class _HistoryPageState extends State<HistoryPage> {
               " Note: ${othersWithSameTag.join(', ')} also use tank $tagStr.";
         }
       }
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      TopSnack.show(context, msg);
       setState(() {});
     }
   }
