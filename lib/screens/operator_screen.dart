@@ -11,8 +11,20 @@ import '../widgets/top_alert.dart';
 import '../widgets/top_snack.dart';
 import 'history_page.dart';
 
+class _ShowDeckDragPayload {
+  final String sourceDiverId;
+  final Set<String> diverIds;
+
+  const _ShowDeckDragPayload({
+    required this.sourceDiverId,
+    required this.diverIds,
+  });
+}
+
 class OperatorScreen extends StatefulWidget {
-  const OperatorScreen({super.key});
+  final bool showDeckMode;
+
+  const OperatorScreen({super.key, this.showDeckMode = false});
 
   @override
   State<OperatorScreen> createState() => _OperatorScreenState();
@@ -30,6 +42,10 @@ class _OperatorScreenState extends State<OperatorScreen> {
   String? selectedDepartmentFilter;
   bool selectedAll = true; // default to show ALL checked-in divers
   bool selectedShowDiversOnly = false; // new tab: SHOW DIVERS (all teams)
+  String? selectedAqcGroupFilter;
+  final Map<String, String> _showDeckAqcOverride = {};
+
+  static const List<String> _aqcGroups = ['BLUE', 'GREEN', 'RED', 'WHITE'];
 
   final Set<String> selectedDivers = {}; // diverIds (any department)
   // Optional gas values per selected diver (bars). In: default 200 for OUT divers, Out: default null ('-').
@@ -41,6 +57,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _diversSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _checkinsSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _logsSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _showDeckAqcSub;
 
   Color _teamColor(String team) {
     switch (team.toUpperCase()) {
@@ -81,6 +98,27 @@ class _OperatorScreenState extends State<OperatorScreen> {
         if (mounted) setState(() {});
       },
     );
+    if (widget.showDeckMode) {
+      _showDeckAqcSub = FirebaseFirestore.instance
+          .collection('showdeck_aqc')
+          .snapshots()
+          .listen((snap) {
+            final next = <String, String>{};
+            for (final d in snap.docs) {
+              final group = (d.data()['group'] ?? '').toString().toUpperCase();
+              if (_aqcGroups.contains(group)) {
+                next[d.id] = group;
+              }
+            }
+            if (mounted) {
+              setState(() {
+                _showDeckAqcOverride
+                  ..clear()
+                  ..addAll(next);
+              });
+            }
+          });
+    }
     _tick();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
   }
@@ -125,6 +163,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
     _diversSub?.cancel();
     _checkinsSub?.cancel();
     _logsSub?.cancel();
+    _showDeckAqcSub?.cancel();
     super.dispose();
   }
 
@@ -137,7 +176,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
         (d) => (d['id'] ?? '') == id,
         orElse: () => {},
       );
-      if ((match['department'] ?? '') == "SHOW DIVERS") {
+      if (_departmentForRecord(match) == "SHOW DIVERS") {
         final t = (match['team'] ?? '').toString().toUpperCase();
         if (t.isNotEmpty) teamsSet.add(t);
       }
@@ -155,7 +194,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
         : (available.isNotEmpty ? available.first : selectedTeam);
 
     final showDivers = divers.where(
-      (d) => (d['department'] ?? '') == "SHOW DIVERS",
+      (d) => _departmentForRecord(d) == "SHOW DIVERS",
     );
     final teamDivers = showDivers.where((d) => (d['team'] ?? '') == useTeam);
     return teamDivers.where((d) => StateCache.isCheckedIn(d['id'])).toList();
@@ -164,9 +203,125 @@ class _OperatorScreenState extends State<OperatorScreen> {
   String? _departmentForId(String id) {
     final list = divers;
     for (final d in list) {
-      if ((d['id'] ?? '') == id) return d['department'];
+      if ((d['id'] ?? '') == id) return (d['department'] ?? '').toString();
     }
     return null;
+  }
+
+  String _departmentForRecord(Map d) {
+    return (d['department'] ?? '').toString();
+  }
+
+  String? _aqcGroupForId(String diverId) => _showDeckAqcOverride[diverId];
+
+  Color _aqcColor(String group) {
+    switch (group.toUpperCase()) {
+      case 'BLUE':
+        return Colors.blue;
+      case 'GREEN':
+        return Colors.green;
+      case 'RED':
+        return Colors.red;
+      case 'WHITE':
+        return Colors.white;
+      default:
+        return Colors.blueGrey;
+    }
+  }
+
+  Set<String> _dragSelectionFor(String diverId) {
+    if (!widget.showDeckMode) return {diverId};
+    if (selectedDivers.isEmpty) return {diverId};
+    final ids = <String>{...selectedDivers, diverId};
+    return ids;
+  }
+
+  Future<void> _assignShowDeckAqcGroupBulk(
+    Set<String> diverIds,
+    String group,
+  ) async {
+    if (!widget.showDeckMode || diverIds.isEmpty) return;
+
+    final toMove = [
+      for (final id in diverIds)
+        if (_aqcGroupForId(id) != group) id,
+    ];
+    if (toMove.isEmpty) return;
+
+    setState(() {
+      for (final id in toMove) {
+        _showDeckAqcOverride[id] = group;
+      }
+    });
+
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+      final coll = FirebaseFirestore.instance.collection('showdeck_aqc');
+      for (final id in toMove) {
+        batch.set(coll.doc(id), {
+          'group': group,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+      await batch.commit();
+    } catch (_) {
+      _snack('Failed to save Show Deck AQC positions.');
+      return;
+    }
+
+    if (toMove.length == 1) {
+      final id = toMove.first;
+      final rec = divers.firstWhere(
+        (d) => (d['id'] ?? '').toString() == id,
+        orElse: () => {'name': id},
+      );
+      final displayName = (rec['name'] ?? id).toString();
+      _snack('$displayName moved to $group AQC (Show Deck only).');
+    } else {
+      _snack('${toMove.length} divers moved to $group AQC (Show Deck only).');
+    }
+  }
+
+  Future<void> _clearShowDeckAqcGroupBulk(Set<String> diverIds) async {
+    if (!widget.showDeckMode || diverIds.isEmpty) return;
+
+    final toClear = [
+      for (final id in diverIds)
+        if ((_aqcGroupForId(id) ?? '').isNotEmpty) id,
+    ];
+    if (toClear.isEmpty) return;
+
+    setState(() {
+      for (final id in toClear) {
+        _showDeckAqcOverride.remove(id);
+      }
+    });
+
+    try {
+      final batch = FirebaseFirestore.instance.batch();
+      final coll = FirebaseFirestore.instance.collection('showdeck_aqc');
+      for (final id in toClear) {
+        batch.delete(coll.doc(id));
+      }
+      await batch.commit();
+    } catch (_) {
+      _snack('Failed to remove Show Deck AQC positions.');
+      return;
+    }
+
+    if (toClear.length == 1) {
+      final id = toClear.first;
+      final rec = divers.firstWhere(
+        (d) => (d['id'] ?? '').toString() == id,
+        orElse: () => {'name': id},
+      );
+      final displayName = (rec['name'] ?? id).toString();
+      _snack('$displayName removed from AQC color (Show Deck only).');
+    } else {
+      _snack(
+        '${toClear.length} divers removed from AQC colors (Show Deck only).',
+      );
+    }
   }
 
   List<String> get nonShowDepartmentsWithCheckins {
@@ -186,9 +341,8 @@ class _OperatorScreenState extends State<OperatorScreen> {
 
   List<String> get checkedInNamesForSelectedDepartment {
     if (selectedDepartmentFilter == null) return [];
-    final list = divers;
-    final deptNames = list
-        .where((d) => d['department'] == selectedDepartmentFilter)
+    final deptNames = divers
+        .where((d) => _departmentForRecord(d) == selectedDepartmentFilter)
         .map((d) => (d['id'] ?? '').toString())
         .where((id) => id.isNotEmpty && StateCache.isCheckedIn(id))
         .toList();
@@ -417,7 +571,9 @@ class _OperatorScreenState extends State<OperatorScreen> {
               width: (isPhone ? 140 : 180) * scale,
               height: (isPhone ? 56 : 68) * scale,
               child: ElevatedButton(
-                onPressed: allSelectedAreOut ? _batchIn : null,
+                onPressed: (allSelectedAreOut && allSelectedHaveTank)
+                    ? _batchIn
+                    : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.black,
                   foregroundColor: Colors.white,
@@ -465,6 +621,9 @@ class _OperatorScreenState extends State<OperatorScreen> {
   bool get allSelectedAreOut =>
       selectedDivers.isNotEmpty &&
       selectedDivers.every((id) => !StateCache.diverIsInWater(id));
+  bool get allSelectedHaveTank =>
+      selectedDivers.isNotEmpty &&
+      selectedDivers.every((id) => StateCache.checkedInTank(id) != null);
   bool get mixedSelection =>
       selectedDivers.isNotEmpty && !(allSelectedAreIn || allSelectedAreOut);
 
@@ -584,6 +743,25 @@ class _OperatorScreenState extends State<OperatorScreen> {
 
   Future<void> _batchIn() async {
     if (!allSelectedAreOut) return;
+    final missingTankIds = [
+      for (final id in selectedDivers)
+        if (StateCache.checkedInTank(id) == null) id,
+    ];
+    if (missingTankIds.isNotEmpty) {
+      final names = [
+        for (final id in missingTankIds)
+          (divers.firstWhere(
+                    (d) => d['id'] == id,
+                    orElse: () => {'name': id},
+                  )['name'] ??
+                  id)
+              .toString(),
+      ];
+      final who = names.take(3).join(', ');
+      final suffix = names.length > 3 ? ' and ${names.length - 3} more' : '';
+      _snack('Assign tank before IN: $who$suffix.');
+      return;
+    }
     final now = DateTime.now().toIso8601String();
     final payload = <Map<String, dynamic>>[];
     for (final id in selectedDivers) {
@@ -793,6 +971,151 @@ class _OperatorScreenState extends State<OperatorScreen> {
     );
   }
 
+  Widget _buildDiverTile({
+    required String diverId,
+    required String title,
+    required String subtitle,
+    required bool waterIn,
+    required bool selected,
+    required double scale,
+    required double verticalFactor,
+  }) {
+    final baseTile = _segmentedDiverButton(
+      diverId: diverId,
+      title: title,
+      subtitle: subtitle,
+      waterIn: waterIn,
+      selected: selected,
+      scale: scale,
+      verticalFactor: verticalFactor,
+      onTap: () => _toggleSelect(diverId),
+    );
+
+    if (!widget.showDeckMode) return baseTile;
+
+    return LongPressDraggable<_ShowDeckDragPayload>(
+      data: _ShowDeckDragPayload(
+        sourceDiverId: diverId,
+        diverIds: _dragSelectionFor(diverId),
+      ),
+      feedback: Material(
+        color: Colors.transparent,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: 280 * scale),
+          child: Opacity(opacity: 0.95, child: baseTile),
+        ),
+      ),
+      childWhenDragging: Opacity(opacity: 0.45, child: baseTile),
+      child: baseTile,
+    );
+  }
+
+  Widget _buildShowDeckDropTarget({
+    required String aqcGroup,
+    required bool selected,
+    required double scale,
+  }) {
+    return DragTarget<_ShowDeckDragPayload>(
+      onWillAcceptWithDetails: (details) {
+        final payload = details.data;
+        if (payload.diverIds.isEmpty) return false;
+        return payload.diverIds.any((id) => _aqcGroupForId(id) != aqcGroup);
+      },
+      onAcceptWithDetails: (details) {
+        _assignShowDeckAqcGroupBulk(details.data.diverIds, aqcGroup);
+      },
+      builder: (context, candidateData, rejectedData) {
+        final bool hovering = candidateData.isNotEmpty;
+        final Color groupColor = _aqcColor(aqcGroup);
+        final bool isWhite = aqcGroup.toUpperCase() == 'WHITE';
+        return ElevatedButton(
+          onPressed: () {
+            setState(() {
+              if (!selectedAll && selectedAqcGroupFilter == aqcGroup) {
+                selectedAll = true;
+                selectedAqcGroupFilter = null;
+              } else {
+                selectedAll = false;
+                selectedAqcGroupFilter = aqcGroup;
+              }
+              selectedShowDiversOnly = false;
+              selectedDepartmentFilter = null;
+            });
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: hovering
+                ? Colors.amber[200]
+                : (selected ? groupColor : Colors.grey[100]),
+            foregroundColor: selected
+                ? (isWhite ? Colors.black : Colors.white)
+                : Colors.black,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18 * scale),
+            ),
+            side: selected
+                ? BorderSide(
+                    color: isWhite ? Colors.black26 : groupColor,
+                    width: 1.2,
+                  )
+                : BorderSide.none,
+            elevation: 0,
+            minimumSize: Size(120 * scale, 44 * scale),
+            textStyle: TextStyle(
+              fontSize: 13 * scale,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          child: Text('$aqcGroup AQC'),
+        );
+      },
+    );
+  }
+
+  Widget _buildShowDeckAllDropTarget({required double scale}) {
+    return DragTarget<_ShowDeckDragPayload>(
+      onWillAcceptWithDetails: (details) {
+        final payload = details.data;
+        if (payload.diverIds.isEmpty) return false;
+        return payload.diverIds.any((id) {
+          final group = _aqcGroupForId(id);
+          return group != null && group.isNotEmpty;
+        });
+      },
+      onAcceptWithDetails: (details) {
+        _clearShowDeckAqcGroupBulk(details.data.diverIds);
+      },
+      builder: (context, candidateData, rejectedData) {
+        final bool hovering = candidateData.isNotEmpty;
+        return ElevatedButton(
+          onPressed: () {
+            setState(() {
+              selectedAll = true;
+              selectedAqcGroupFilter = null;
+              selectedShowDiversOnly = false;
+              selectedDepartmentFilter = null;
+            });
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: hovering
+                ? Colors.amber[200]
+                : (selectedAll ? Colors.blueGrey[700] : Colors.grey[100]),
+            foregroundColor: selectedAll ? Colors.white : Colors.black,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18 * scale),
+            ),
+            elevation: 0,
+            minimumSize: Size(96 * scale, 44 * scale),
+            textStyle: TextStyle(
+              fontSize: 13 * scale,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          child: const Text('ALL'),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
@@ -820,7 +1143,73 @@ class _OperatorScreenState extends State<OperatorScreen> {
     // Team color filters removed; only department filters and ALL remain.
 
     final List<Widget> leftTiles = [];
-    if (selectedAll) {
+    if (widget.showDeckMode) {
+      final names = allCheckedInNames.where((id) {
+        if (selectedAll || selectedAqcGroupFilter == null) return true;
+        return _aqcGroupForId(id) == selectedAqcGroupFilter;
+      }).toList();
+
+      if (names.isEmpty) {
+        leftTiles.add(
+          Center(
+            child: Text(
+              selectedAqcGroupFilter == null
+                  ? "No divers checked in."
+                  : "No divers in ${selectedAqcGroupFilter!} AQC.",
+              style: TextStyle(
+                fontSize: (isPhone ? 18 : 22) * scale,
+                color: Colors.grey[600],
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        );
+      } else {
+        leftTiles.add(
+          GridView.count(
+            crossAxisCount: crossAxisCount,
+            mainAxisSpacing: gridSpacing,
+            crossAxisSpacing: gridSpacing,
+            childAspectRatio: childAspect,
+            children: [
+              for (final id in names)
+                Builder(
+                  builder: (_) {
+                    final waterIn = StateCache.diverIsInWater(id);
+                    final bool isSel = selectedDivers.contains(id);
+                    final int? tag = StateCache.checkedInTank(id);
+                    final rec = divers.firstWhere(
+                      (d) => d['id'] == id,
+                      orElse: () => const {},
+                    );
+                    final displayName = (rec['name'] ?? id).toString();
+                    final String? aqcGroup = _aqcGroupForId(id);
+                    final String dep = (rec['department'] ?? '').toString();
+                    final String team = (rec['team'] ?? '').toString();
+                    final String subtitle = aqcGroup != null
+                        ? 'AQC - $aqcGroup'
+                        : (dep == 'SHOW DIVERS' && team.isNotEmpty
+                              ? '$dep - $team'
+                              : dep);
+                    final String titleText = tag == null
+                        ? '$displayName  (NO TANK)'
+                        : "$displayName  (Tank ${tag.toString().padLeft(2, '0')})";
+                    return _buildDiverTile(
+                      diverId: id,
+                      title: titleText,
+                      subtitle: subtitle,
+                      waterIn: waterIn,
+                      selected: isSel,
+                      scale: tileScale,
+                      verticalFactor: verticalFactor,
+                    );
+                  },
+                ),
+            ],
+          ),
+        );
+      }
+    } else if (selectedAll) {
       final names = allCheckedInNames; // now diverIds
       if (names.isEmpty) {
         leftTiles.add(
@@ -854,12 +1243,11 @@ class _OperatorScreenState extends State<OperatorScreen> {
                       orElse: () => {'name': id},
                     )['name'];
                     // Use neutral color for ALL listing
-                    final Color bg = isSel ? Colors.green : Colors.blueGrey;
                     final rec = divers.firstWhere(
                       (d) => d['id'] == id,
                       orElse: () => const {},
                     );
-                    final String dep = (rec['department'] ?? '').toString();
+                    final String dep = _departmentForRecord(rec);
                     final String team = (rec['team'] ?? '').toString();
                     String subtitle = '';
                     if (dep.isNotEmpty) {
@@ -868,9 +1256,9 @@ class _OperatorScreenState extends State<OperatorScreen> {
                           : dep;
                     }
                     final String titleText = tag == null
-                        ? displayName
+                        ? '$displayName  (NO TANK)'
                         : "$displayName  (Tank ${tag.toString().padLeft(2, '0')})";
-                    return _segmentedDiverButton(
+                    return _buildDiverTile(
                       diverId: id,
                       title: titleText,
                       subtitle: subtitle,
@@ -878,7 +1266,6 @@ class _OperatorScreenState extends State<OperatorScreen> {
                       selected: isSel,
                       scale: tileScale,
                       verticalFactor: verticalFactor,
-                      onTap: () => _toggleSelect(id),
                     );
                   },
                 ),
@@ -916,12 +1303,11 @@ class _OperatorScreenState extends State<OperatorScreen> {
                     final String name = (d['name'] ?? '').toString();
                     final waterIn = StateCache.diverIsInWater(id);
                     final bool isSel = selectedDivers.contains(id);
-                    final Color bg = isSel ? Colors.green : Colors.blueGrey;
                     final int? tag = StateCache.checkedInTank(id);
                     final String titleText = tag == null
-                        ? name
+                        ? '$name  (NO TANK)'
                         : "$name  (Tank ${tag.toString().padLeft(2, '0')})";
-                    return _segmentedDiverButton(
+                    return _buildDiverTile(
                       diverId: id,
                       title: titleText,
                       waterIn: waterIn,
@@ -929,7 +1315,6 @@ class _OperatorScreenState extends State<OperatorScreen> {
                       subtitle: '',
                       scale: tileScale,
                       verticalFactor: verticalFactor,
-                      onTap: () => _toggleSelect(id),
                     );
                   },
                 ),
@@ -940,7 +1325,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
     } else if (showDiversOnlyMode) {
       // SHOW DIVERS tab (all teams under the SHOW DIVERS department)
       final showDiversAll = divers
-          .where((d) => (d['department'] ?? '') == 'SHOW DIVERS')
+          .where((d) => _departmentForRecord(d) == 'SHOW DIVERS')
           .where((d) => StateCache.isCheckedIn((d['id'] ?? '').toString()))
           .toList();
       // Sort by name for readability
@@ -986,7 +1371,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                     final String subtitle = team.isNotEmpty
                         ? 'SHOW DIVERS - ${team.toUpperCase()}'
                         : 'SHOW DIVERS';
-                    return _segmentedDiverButton(
+                    return _buildDiverTile(
                       diverId: id,
                       title: titleText,
                       subtitle: subtitle,
@@ -994,7 +1379,6 @@ class _OperatorScreenState extends State<OperatorScreen> {
                       selected: isSel,
                       scale: tileScale,
                       verticalFactor: verticalFactor,
-                      onTap: () => _toggleSelect(id),
                     );
                   },
                 ),
@@ -1034,21 +1418,27 @@ class _OperatorScreenState extends State<OperatorScreen> {
                       (d) => d['id'] == id,
                       orElse: () => {'name': id},
                     )['name'];
-                    final Color bg = isSel
-                        ? Colors.green
-                        : Colors.blueGrey; // neutral
                     final String titleText = tag == null
-                        ? displayName
+                        ? '$displayName  (NO TANK)'
                         : "$displayName  (Tank ${tag.toString().padLeft(2, '0')})";
-                    return _segmentedDiverButton(
+                    final rec = divers.firstWhere(
+                      (d) => d['id'] == id,
+                      orElse: () => const {},
+                    );
+                    final String dep = _departmentForRecord(rec);
+                    final String team = (rec['team'] ?? '').toString();
+                    final String subtitle =
+                        dep == 'SHOW DIVERS' && team.isNotEmpty
+                        ? '$dep - $team'
+                        : dep;
+                    return _buildDiverTile(
                       diverId: id,
                       title: titleText,
                       waterIn: waterIn,
                       selected: isSel,
-                      subtitle: '',
+                      subtitle: subtitle,
                       scale: tileScale,
                       verticalFactor: verticalFactor,
-                      onTap: () => _toggleSelect(id),
                     );
                   },
                 ),
@@ -1060,7 +1450,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
 
     final availableTeams = teamsWithCheckins;
     final showTeamGroup = availableTeams.isNotEmpty;
-    final bool hasShowDivers = showTeamGroup; // same source: SHOW DIVERS teams
+    final bool hasShowDivers = showTeamGroup;
     final showDeptGroup = nonShowDepartmentsWithCheckins.isNotEmpty;
     final showAnyFilters = showTeamGroup || showDeptGroup || hasShowDivers;
 
@@ -1109,7 +1499,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                   ),
                   SizedBox(height: 4 * scale),
                   Text(
-                    "Deck Operator",
+                    widget.showDeckMode ? "Show Deck" : "Deck Operator",
                     style: TextStyle(
                       fontSize: (isPhone ? 28 : 36) * scale,
                       fontWeight: FontWeight.bold,
@@ -1120,7 +1510,39 @@ class _OperatorScreenState extends State<OperatorScreen> {
                   ),
                   SizedBox(height: 10 * scale),
 
-                  if (showAnyFilters)
+                  if (widget.showDeckMode)
+                    Column(
+                      children: [
+                        Text(
+                          'Long-press and drag a diver onto an AQC color to group them. Selected divers move together.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.blueGrey[600],
+                            fontSize: 13 * scale,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        SizedBox(height: 8 * scale),
+                        Wrap(
+                          spacing: 6 * scale,
+                          runSpacing: 6 * scale,
+                          children: [
+                            _buildShowDeckAllDropTarget(scale: scale),
+                            for (final group in _aqcGroups)
+                              _buildShowDeckDropTarget(
+                                aqcGroup: group,
+                                selected:
+                                    !selectedAll &&
+                                    selectedAqcGroupFilter == group,
+                                scale: scale,
+                              ),
+                          ],
+                        ),
+                        SizedBox(height: 8 * scale),
+                      ],
+                    ),
+
+                  if (!widget.showDeckMode && showAnyFilters)
                     Wrap(
                       spacing: 6 * scale,
                       runSpacing: 6 * scale,
@@ -1238,7 +1660,7 @@ class _OperatorScreenState extends State<OperatorScreen> {
                               },
                             ),
 
-                        if (showDeptGroup)
+                        if (!widget.showDeckMode && showDeptGroup)
                           for (final dep in nonShowDepartmentsWithCheckins)
                             ElevatedButton(
                               onPressed: () {

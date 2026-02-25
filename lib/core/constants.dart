@@ -19,4 +19,4 @@ const List<String> departments = [
 
 const List<String> teams = ["BLUE", "GREEN", "RED", "WHITE"];
 
-enum FlowMode { checkIn, operator }
+enum FlowMode { checkIn, operator, showDeck }

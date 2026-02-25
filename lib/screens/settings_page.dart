@@ -407,7 +407,7 @@ class _SettingsPageState extends State<SettingsPage> {
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
             SizedBox(height: 2),
-            Text('Updated: 2026-jan-26 at 12:42 PM'),
+            Text('Updated: 2026-feb-26 at 01:06 AM'),
             SizedBox(height: 10),
             Text('Developed by: Ricardo Costa Silva'),
             SizedBox(height: 6),
@@ -441,7 +441,7 @@ class _SettingsPageState extends State<SettingsPage> {
       builder: (_) => AlertDialog(
         title: const Text("New Day Reset"),
         content: const Text(
-          "This will clear today's CHECKED‑IN list (not IN WATER).\nDivers currently IN WATER will remain checked‑in and carry over.",
+          "This will clear today's CHECKED‑IN list (not IN WATER) and reset Show Deck AQC groups.\nDivers currently IN WATER will remain checked‑in and carry over.",
         ),
         actions: [
           TextButton(
@@ -462,11 +462,23 @@ class _SettingsPageState extends State<SettingsPage> {
                 }
               }
               await batch.commit();
+
+              // Clear persisted Show Deck AQC assignments for the new day.
+              final aqcColl = FirebaseFirestore.instance.collection(
+                'showdeck_aqc',
+              );
+              final aqcSnap = await aqcColl.get();
+              if (aqcSnap.docs.isNotEmpty) {
+                final aqcBatch = FirebaseFirestore.instance.batch();
+                for (final doc in aqcSnap.docs) {
+                  aqcBatch.delete(doc.reference);
+                }
+                await aqcBatch.commit();
+              }
+
               if (context.mounted) {
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text("Checked‑In list cleared.")),
-                );
+                _snack("Checked‑In list and Show Deck AQC groups cleared.");
                 setState(() {});
               }
             },

@@ -61,6 +61,13 @@ class _HomeScreenState extends State<HomeScreen> {
         context,
         MaterialPageRoute(builder: (_) => const OperatorScreen()),
       );
+    } else if (flow == FlowMode.showDeck) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const OperatorScreen(showDeckMode: true),
+        ),
+      );
     } else {
       Navigator.push(
         context,
@@ -148,6 +155,22 @@ class _HomeScreenState extends State<HomeScreen> {
                         ),
                       ),
                       child: const Text("Deck Operator"),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => _startFlow(FlowMode.showDeck),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.blueGrey[700],
+                        foregroundColor: Colors.white,
+                        minimumSize: Size(260 * scale, 90 * scale),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(40 * scale),
+                        ),
+                        textStyle: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 26 * scale,
+                        ),
+                      ),
+                      child: const Text("Show Deck"),
                     ),
                   ],
                 ),

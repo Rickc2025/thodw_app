@@ -237,8 +237,8 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
   }
 
   void _confirm() async {
-    if (selectedDiver == null || selectedTag == null) {
-      _snack('Please enter a tank number.');
+    if (selectedDiver == null) {
+      _snack('Please select a diver.');
       return;
     }
     if (StateCache.isCheckedIn(selectedDiver!)) {
@@ -251,31 +251,35 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
       tag: selectedTag,
     );
     // Build notice if others have the same tank
-    final String tagStr = selectedTag!.toString().padLeft(2, '0');
-    final ids = StateCache.checkedInIds();
-    final List<String> others = [];
-    for (final oid in ids) {
-      if (oid == selectedDiver) continue;
-      final t = StateCache.checkedInTank(oid);
-      if (t == selectedTag) {
-        try {
-          final doc = await FirebaseFirestore.instance
-              .collection('divers')
-              .doc(oid)
-              .get();
-          final oname = (doc.data()?['name'] ?? oid).toString();
-          others.add(oname);
-        } catch (_) {
-          others.add(oid);
+    String msg;
+    if (selectedTag == null) {
+      msg = 'Checked in ${selectedDiverName ?? 'diver'} with no tank.';
+    } else {
+      final String tagStr = selectedTag!.toString().padLeft(2, '0');
+      final ids = StateCache.checkedInIds();
+      final List<String> others = [];
+      for (final oid in ids) {
+        if (oid == selectedDiver) continue;
+        final t = StateCache.checkedInTank(oid);
+        if (t == selectedTag) {
+          try {
+            final doc = await FirebaseFirestore.instance
+                .collection('divers')
+                .doc(oid)
+                .get();
+            final oname = (doc.data()?['name'] ?? oid).toString();
+            others.add(oname);
+          } catch (_) {
+            others.add(oid);
+          }
         }
       }
-    }
-    String msg =
-        'Checked in ${selectedDiverName ?? 'diver'} with tank $tagStr.';
-    if (others.isNotEmpty) {
-      msg += others.length == 1
-          ? ' Note: ${others.first} also uses tank $tagStr.'
-          : ' Note: ${others.join(', ')} also use tank $tagStr.';
+      msg = 'Checked in ${selectedDiverName ?? 'diver'} with tank $tagStr.';
+      if (others.isNotEmpty) {
+        msg += others.length == 1
+            ? ' Note: ${others.first} also uses tank $tagStr.'
+            : ' Note: ${others.join(', ')} also use tank $tagStr.';
+      }
     }
     _snack(msg);
     _cancel();
@@ -713,7 +717,7 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
                                               .toString();
                                           final tag = m['tag'] as int?;
                                           final tankStr = tag == null
-                                              ? '--'
+                                              ? '-'
                                               : tag.toString().padLeft(2, '0');
                                           final Color rowColor = i.isEven
                                               ? (Colors.blueGrey[50] ??
@@ -774,7 +778,6 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
                                   child: ElevatedButton(
                                     onPressed:
                                         (selectedDiver != null &&
-                                            selectedTag != null &&
                                             (!isOtherAggregated ||
                                                 selectedSubDepartment != null))
                                         ? _confirm

@@ -246,6 +246,12 @@ class _HistoryPageState extends State<HistoryPage> {
       }
       return;
     }
+    if (tag == null) {
+      if (context.mounted) {
+        TopSnack.show(context, 'Assign a tank before sending $displayName IN.');
+      }
+      return;
+    }
     final now = DateTime.now().toIso8601String();
     await StateCache.addLogs([
       {
@@ -464,7 +470,8 @@ class _HistoryPageState extends State<HistoryPage> {
     );
     for (final s in sessions) {
       final name = _csvSafe(s['name']);
-      final tag = _csvSafe(s['tag']?.toString());
+      final rawTag = (s['tag'] ?? '').toString().trim();
+      final tag = _csvSafe(rawTag.isEmpty ? '-' : rawTag);
       final gasIn = _csvSafe(s['gasIn'] == null ? '' : '${s['gasIn']}bar');
       final gasOut = _csvSafe(s['gasOut'] == null ? '' : '${s['gasOut']}bar');
       final dtIn = _csvSafe(s['datetimeIn']);
@@ -538,9 +545,10 @@ class _HistoryPageState extends State<HistoryPage> {
       sb.writeln('</Row>');
 
       for (final s in sessions) {
+        final rawTag = (s['tag'] ?? '').toString().trim();
         final row = [
           (s['name'] ?? '').toString(),
-          (s['tag'] ?? '').toString(),
+          rawTag.isEmpty ? '-' : rawTag,
           s['gasIn'] == null ? '' : '${s['gasIn']}bar',
           s['gasOut'] == null ? '' : '${s['gasOut']}bar',
           (s['datetimeIn'] ?? '').toString(),
@@ -1039,10 +1047,12 @@ class _HistoryPageState extends State<HistoryPage> {
                                         ),
                                         Expanded(
                                           child: Text(
-                                            (tag ?? '').toString().padLeft(
-                                              2,
-                                              '0',
-                                            ),
+                                            tag == null
+                                                ? '-'
+                                                : tag.toString().padLeft(
+                                                    2,
+                                                    '0',
+                                                  ),
                                             style: TextStyle(
                                               fontSize:
                                                   (isPhone ? 14 : 17) * scale,
@@ -1390,7 +1400,12 @@ class _HistoryPageState extends State<HistoryPage> {
                                           ),
                                           Expanded(
                                             child: Text(
-                                              (s['tag'] ?? '').toString(),
+                                              ((s['tag'] ?? '')
+                                                      .toString()
+                                                      .trim()
+                                                      .isEmpty)
+                                                  ? '-'
+                                                  : (s['tag'] ?? '').toString(),
                                               style: TextStyle(
                                                 fontSize:
                                                     (isPhone ? 14 : 17) * scale,
