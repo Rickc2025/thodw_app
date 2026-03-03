@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/constants.dart';
 import '../core/utils.dart';
-import '../services/data_service.dart';
+import '../services/state_cache.dart';
 import '../widgets/top_alert.dart';
 import 'department_screen.dart';
 import 'history_page.dart';
@@ -20,22 +21,34 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int currentlyIn = 0;
   Timer? _timer;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _checkinsSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _logsSub;
 
   @override
   void initState() {
     super.initState();
     _tick();
+    _checkinsSub = FirebaseFirestore.instance
+        .collection('checkins')
+        .snapshots()
+        .listen((_) => _tick());
+    _logsSub = FirebaseFirestore.instance
+        .collection('logs')
+        .snapshots()
+        .listen((_) => _tick());
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
   }
 
-  Future<void> _tick() async {
-    final c = await getCurrentlyInCount();
+  void _tick() {
+    final c = StateCache.currentlyIn();
     if (mounted) setState(() => currentlyIn = c);
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _checkinsSub?.cancel();
+    _logsSub?.cancel();
     super.dispose();
   }
 
