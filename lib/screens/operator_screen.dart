@@ -804,13 +804,24 @@ class _OperatorScreenState extends State<OperatorScreen> {
         'datetime': now,
         'gasOut': _gasOut[id],
       });
-      // Do not uncheck from deck when sending OUT of water.
-      // Keep the diver checked-in with the same tag.
-      await StateCache.setCheckin(id, checkedIn: true, tag: tag);
+      if (widget.showDeckMode) {
+        // Show Deck rule: when diver goes OUT, clear assigned tank.
+        await StateCache.setCheckin(id, checkedIn: true, tag: null);
+      } else {
+        // Do not uncheck from deck when sending OUT of water.
+        // Keep the diver checked-in with the same tag.
+        await StateCache.setCheckin(id, checkedIn: true, tag: tag);
+      }
     }
     await StateCache.addLogs(payload);
     await _playConfirm();
-    _snack("Checked OUT ${selectedDivers.length} diver(s).");
+    if (widget.showDeckMode) {
+      _snack(
+        "Checked OUT ${selectedDivers.length} diver(s). Tank number cleared.",
+      );
+    } else {
+      _snack("Checked OUT ${selectedDivers.length} diver(s).");
+    }
     setState(() {
       selectedDivers.clear();
     });
@@ -1144,7 +1155,16 @@ class _OperatorScreenState extends State<OperatorScreen> {
 
     final List<Widget> leftTiles = [];
     if (widget.showDeckMode) {
-      final names = allCheckedInNames.where((id) {
+      final showDiversCheckedIn = allCheckedInNames.where((id) {
+        final rec = divers.firstWhere(
+          (d) => (d['id'] ?? '').toString() == id,
+          orElse: () => const {},
+        );
+        if (rec.isEmpty) return false;
+        return (rec['department'] ?? '').toString() == 'SHOW DIVERS';
+      }).toList();
+
+      final names = showDiversCheckedIn.where((id) {
         if (selectedAll || selectedAqcGroupFilter == null) return true;
         return _aqcGroupForId(id) == selectedAqcGroupFilter;
       }).toList();
