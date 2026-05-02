@@ -14,6 +14,10 @@ export 'app.dart' show MyApp;
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+  };
+
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
@@ -26,23 +30,39 @@ Future<void> main() async {
     ),
   );
 
-  // Initialize Firebase and sign in anonymously so clients can write
+  // Initialize Firebase, but don't block the whole app if auth/network/rules fail.
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
   } catch (_) {
-    // Fallback: initialize with platform defaults if firebase_options is missing for this target
-    await Firebase.initializeApp();
+    try {
+      // Fallback: initialize with platform defaults if firebase_options is missing for this target
+      await Firebase.initializeApp();
+    } catch (_) {
+      // Keep booting in local-only mode.
+    }
   }
-  await FirebaseAuth.instance.signInAnonymously();
+
+  try {
+    await FirebaseAuth.instance.signInAnonymously();
+  } catch (_) {
+    // Keep booting in local-only mode when anonymous auth is disabled.
+  }
+
   // Ensure local boxes exist for legacy reads during migration
   await Hive.initFlutter();
   await Hive.openBox('divers');
   await Hive.openBox('prefs');
   await Hive.openBox('checkins');
   await Hive.openBox('logs');
-  // Start Firestore listeners for shared state
-  await StateCache.init();
+
+  try {
+    // Start Firestore listeners for shared state when available.
+    await StateCache.init();
+  } catch (_) {
+    // Firestore unavailable or denied; UI can still render from local state.
+  }
+
   runApp(const MyApp());
 }

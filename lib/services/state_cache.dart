@@ -29,21 +29,29 @@ class StateCache {
     _checkinsSub?.cancel();
     _logsSub?.cancel();
 
-    _checkinsSub = db.collection('checkins').snapshots().listen((snap) {
-      // Rebuild entire check-ins map from snapshot to reflect deletions
-      final Map<String, Map<String, dynamic>> next = {};
-      for (final d in snap.docs) {
-        final data = d.data();
-        next[d.id] = {
-          'checkedIn': (data['checkedIn'] ?? false) == true,
-          'tag': _parseInt(data['tag']),
-          'timestamp': (data['timestamp'] ?? '').toString(),
-        };
-      }
-      _checkins
-        ..clear()
-        ..addAll(next);
-    });
+    _checkinsSub = db
+        .collection('checkins')
+        .snapshots()
+        .listen(
+          (snap) {
+            // Rebuild entire check-ins map from snapshot to reflect deletions
+            final Map<String, Map<String, dynamic>> next = {};
+            for (final d in snap.docs) {
+              final data = d.data();
+              next[d.id] = {
+                'checkedIn': (data['checkedIn'] ?? false) == true,
+                'tag': _parseInt(data['tag']),
+                'timestamp': (data['timestamp'] ?? '').toString(),
+              };
+            }
+            _checkins
+              ..clear()
+              ..addAll(next);
+          },
+          onError: (_, __) {
+            // Keep existing/local cache when Firestore is unavailable.
+          },
+        );
 
     // Rebuild latest status per diverId on each snapshot. We read logs in
     // descending datetime order, so the first occurrence of a diverId is the
@@ -52,23 +60,28 @@ class StateCache {
         .collection('logs')
         .orderBy('datetime', descending: true)
         .snapshots()
-        .listen((snap) {
-          final Map<String, Map<String, dynamic>> latestById = {};
-          for (final d in snap.docs) {
-            final data = d.data();
-            final diverId = (data['diverId'] ?? '').toString();
-            final tagStr = (data['tag'] ?? '').toString();
-            final key = "$diverId|$tagStr";
-            // Track last log per diverId|tag for editing/use cases.
-            _lastLogByKey[key] = data;
-            if (diverId.isEmpty) continue;
-            // First hit wins due to descending order = latest
-            latestById.putIfAbsent(diverId, () => data);
-          }
-          _latestLogById
-            ..clear()
-            ..addAll(latestById);
-        });
+        .listen(
+          (snap) {
+            final Map<String, Map<String, dynamic>> latestById = {};
+            for (final d in snap.docs) {
+              final data = d.data();
+              final diverId = (data['diverId'] ?? '').toString();
+              final tagStr = (data['tag'] ?? '').toString();
+              final key = "$diverId|$tagStr";
+              // Track last log per diverId|tag for editing/use cases.
+              _lastLogByKey[key] = data;
+              if (diverId.isEmpty) continue;
+              // First hit wins due to descending order = latest
+              latestById.putIfAbsent(diverId, () => data);
+            }
+            _latestLogById
+              ..clear()
+              ..addAll(latestById);
+          },
+          onError: (_, __) {
+            // Keep existing/local cache when Firestore is unavailable.
+          },
+        );
   }
 
   static int? _parseInt(dynamic t) {

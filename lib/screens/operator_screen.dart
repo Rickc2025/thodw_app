@@ -84,40 +84,67 @@ class _OperatorScreenState extends State<OperatorScreen> {
     _diversSub = FirebaseFirestore.instance
         .collection('divers')
         .snapshots()
-        .listen((_) async {
-          await _loadDivers();
-        });
+        .listen(
+          (_) async {
+            await _loadDivers();
+          },
+          onError: (_, __) async {
+            await _loadDivers();
+          },
+        );
     _checkinsSub = FirebaseFirestore.instance
         .collection('checkins')
         .snapshots()
-        .listen((_) {
-          if (mounted) setState(() => currentlyIn = StateCache.currentlyIn());
-        });
-    _logsSub = FirebaseFirestore.instance.collection('logs').snapshots().listen(
-      (_) {
-        if (mounted) setState(() {});
-      },
-    );
+        .listen(
+          (_) {
+            if (mounted) setState(() => currentlyIn = StateCache.currentlyIn());
+          },
+          onError: (_, __) {
+            if (mounted) setState(() => currentlyIn = StateCache.currentlyIn());
+          },
+        );
+    _logsSub = FirebaseFirestore.instance
+        .collection('logs')
+        .snapshots()
+        .listen(
+          (_) {
+            if (mounted) setState(() {});
+          },
+          onError: (_, __) {
+            if (mounted) setState(() {});
+          },
+        );
     if (widget.showDeckMode) {
       _showDeckAqcSub = FirebaseFirestore.instance
           .collection('showdeck_aqc')
           .snapshots()
-          .listen((snap) {
-            final next = <String, String>{};
-            for (final d in snap.docs) {
-              final group = (d.data()['group'] ?? '').toString().toUpperCase();
-              if (_aqcGroups.contains(group)) {
-                next[d.id] = group;
+          .listen(
+            (snap) {
+              final next = <String, String>{};
+              for (final d in snap.docs) {
+                final group = (d.data()['group'] ?? '')
+                    .toString()
+                    .toUpperCase();
+                if (_aqcGroups.contains(group)) {
+                  next[d.id] = group;
+                }
               }
-            }
-            if (mounted) {
-              setState(() {
-                _showDeckAqcOverride
-                  ..clear()
-                  ..addAll(next);
-              });
-            }
-          });
+              if (mounted) {
+                setState(() {
+                  _showDeckAqcOverride
+                    ..clear()
+                    ..addAll(next);
+                });
+              }
+            },
+            onError: (_, __) {
+              if (mounted) {
+                setState(() {
+                  _showDeckAqcOverride.clear();
+                });
+              }
+            },
+          );
     }
     _tick();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());

@@ -34,28 +34,39 @@ class _DepartmentScreenState extends State<DepartmentScreen> {
     _diversSub = FirebaseFirestore.instance
         .collection('divers')
         .snapshots()
-        .listen((snap) async {
-          try {
-            final remote = [
-              for (final d in snap.docs) {...d.data(), 'name': d.id},
-            ];
-            _diverList = remote
-                .map((e) => Map<String, dynamic>.from(e))
-                .toList();
-          } catch (_) {
+        .listen(
+          (snap) async {
+            try {
+              final remote = [
+                for (final d in snap.docs) {...d.data(), 'name': d.id},
+              ];
+              _diverList = remote
+                  .map((e) => Map<String, dynamic>.from(e))
+                  .toList();
+            } catch (_) {
+              final stored = Hive.box(
+                'divers',
+              ).get('diversList', defaultValue: <Map>[]);
+              _diverList = List<Map>.from(
+                stored,
+              ).map((e) => Map<String, dynamic>.from(e)).toList();
+            }
+            if (mounted) setState(() {});
+          },
+          onError: (_, __) {
             final stored = Hive.box(
               'divers',
             ).get('diversList', defaultValue: <Map>[]);
             _diverList = List<Map>.from(
               stored,
             ).map((e) => Map<String, dynamic>.from(e)).toList();
-          }
-          if (mounted) setState(() {});
-        });
+            if (mounted) setState(() {});
+          },
+        );
     _checkinsSub = FirebaseFirestore.instance
         .collection('checkins')
         .snapshots()
-        .listen((_) => _update());
+        .listen((_) => _update(), onError: (_, __) => _update());
   }
 
   Future<void> _update() async {

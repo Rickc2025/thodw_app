@@ -55,15 +55,25 @@ class _CheckInNamesScreen2State extends State<CheckInNamesScreen2> {
     _diversSub = FirebaseFirestore.instance
         .collection('divers')
         .snapshots()
-        .listen((_) {
-          _loadDivers();
-        });
+        .listen(
+          (_) {
+            _loadDivers();
+          },
+          onError: (_, __) {
+            _loadDivers();
+          },
+        );
     _checkinsSub = FirebaseFirestore.instance
         .collection('checkins')
         .snapshots()
-        .listen((_) {
-          if (mounted) setState(() => currentlyIn = StateCache.currentlyIn());
-        });
+        .listen(
+          (_) {
+            if (mounted) setState(() => currentlyIn = StateCache.currentlyIn());
+          },
+          onError: (_, __) {
+            if (mounted) setState(() => currentlyIn = StateCache.currentlyIn());
+          },
+        );
   }
 
   @override

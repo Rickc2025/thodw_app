@@ -38,11 +38,11 @@ class _SettingsPageState extends State<SettingsPage> {
     _diversSub = FirebaseFirestore.instance
         .collection('divers')
         .snapshots()
-        .listen((_) => _loadDivers());
+        .listen((_) => _loadDivers(), onError: (_, __) => _loadDivers());
     _checkinsSub = FirebaseFirestore.instance
         .collection('checkins')
         .snapshots()
-        .listen((_) => _update());
+        .listen((_) => _update(), onError: (_, __) => _update());
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _update());
   }
 

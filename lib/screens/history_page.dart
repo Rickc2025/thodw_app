@@ -48,17 +48,29 @@ class _HistoryPageState extends State<HistoryPage> {
         .collection('logs')
         .orderBy('datetime')
         .snapshots()
-        .listen((_) {
-          _refreshCaches();
-          if (mounted) setState(() {});
-        });
+        .listen(
+          (_) {
+            _refreshCaches();
+            if (mounted) setState(() {});
+          },
+          onError: (_, __) {
+            _refreshCaches();
+            if (mounted) setState(() {});
+          },
+        );
     _checkinsSub = FirebaseFirestore.instance
         .collection('checkins')
         .snapshots()
-        .listen((_) {
-          _refreshCaches();
-          if (mounted) setState(() {});
-        });
+        .listen(
+          (_) {
+            _refreshCaches();
+            if (mounted) setState(() {});
+          },
+          onError: (_, __) {
+            _refreshCaches();
+            if (mounted) setState(() {});
+          },
+        );
   }
 
   Future<void> _updateCounts() async {

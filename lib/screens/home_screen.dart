@@ -31,11 +31,11 @@ class _HomeScreenState extends State<HomeScreen> {
     _checkinsSub = FirebaseFirestore.instance
         .collection('checkins')
         .snapshots()
-        .listen((_) => _tick());
+        .listen((_) => _tick(), onError: (_, __) => _tick());
     _logsSub = FirebaseFirestore.instance
         .collection('logs')
         .snapshots()
-        .listen((_) => _tick());
+        .listen((_) => _tick(), onError: (_, __) => _tick());
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _tick());
   }
 
