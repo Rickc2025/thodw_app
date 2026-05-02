@@ -1,0 +1,73 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function currentUserPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function isAdmin() {
+      return signedIn() &&
+        exists(currentUserPath()) &&
+        get(currentUserPath()).data.role == 'admin';
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function emailMatchesMelcoId(melcoId) {
+      return signedIn() && request.auth.token.email == (melcoId + '@hodw.local');
+    }
+
+    match /users/{uid} {
+      allow read: if isSelf(uid) || isAdmin();
+
+      allow create: if isSelf(uid) && (
+          (
+            request.resource.data.melcoId == '1015083' &&
+            request.resource.data.role == 'admin' &&
+            emailMatchesMelcoId('1015083')
+          ) || (
+            request.resource.data.role == 'operator' &&
+            emailMatchesMelcoId(request.resource.data.melcoId)
+          )
+        );
+
+      allow update: if isAdmin() || (
+        isSelf(uid) &&
+        request.resource.data.melcoId == resource.data.melcoId &&
+        request.resource.data.role == resource.data.role
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    match /divers/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /checkins/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /logs/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /showdeck_aqc/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /prefs/{docId} {
+      allow read, write: if signedIn();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

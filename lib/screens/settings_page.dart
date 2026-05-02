@@ -21,6 +21,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   late Box diversBox;
+
   int currentlyIn = 0;
   Timer? _timer;
   bool darkMode = false;
@@ -82,7 +83,6 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _showAddDialog() {
-    // Use the same full-featured dialog as Edit Diver, but with empty defaults.
     _showDiverDialog(diver: null);
   }
 
@@ -95,7 +95,7 @@ class _SettingsPageState extends State<SettingsPage> {
   void _showDiverDialog({Map? diver}) {
     final checkinsBox = Hive.box('checkins');
     final bool isEdit = diver != null;
-    final String? diverId = isEdit ? (diver!['id']?.toString()) : null;
+    final String? diverId = isEdit ? (diver['id']?.toString()) : null;
     String oldName = isEdit ? (diver['name'] ?? '').toString() : '';
     String newName = isEdit ? oldName : '';
     // Persist a single controller instance across dialog rebuilds so the
@@ -435,6 +435,91 @@ class _SettingsPageState extends State<SettingsPage> {
     } catch (_) {}
   }
 
+  Future<void> _logout() async {
+    await MyApp.of(context)?.logout();
+    if (!mounted) return;
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  Future<void> _changePassword() async {
+    final controller = TextEditingController();
+    final confirmController = TextEditingController();
+    String? error;
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Change account password'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: controller,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'New password'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: confirmController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Confirm password',
+                  ),
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final next = controller.text.trim();
+                  final confirm = confirmController.text.trim();
+                  if (next.length < 6) {
+                    setDialogState(
+                      () => error = 'Password must be at least 6 characters.',
+                    );
+                    return;
+                  }
+                  if (next != confirm) {
+                    setDialogState(() => error = 'Passwords do not match.');
+                    return;
+                  }
+                  Navigator.pop(dialogContext, next);
+                },
+                child: const Text('Save'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    controller.dispose();
+    confirmController.dispose();
+
+    if (result == null) return;
+    try {
+      await MyApp.of(context)?.changePassword(result);
+      if (mounted) _snack('Password updated.');
+    } catch (e) {
+      if (mounted) {
+        _snack(e.toString().replaceFirst('Exception: ', ''));
+      }
+    }
+  }
+
   void _resetCheckIns() {
     showDialog(
       context: context,
@@ -612,7 +697,6 @@ class _SettingsPageState extends State<SettingsPage> {
                     ],
                   ),
                 ),
-                // Reset is always allowed; divers currently IN WATER are preserved.
                 SizedBox(height: 12 * scale),
                 SizedBox(height: 12 * scale),
                 Padding(
@@ -628,6 +712,28 @@ class _SettingsPageState extends State<SettingsPage> {
                     ),
                     value: darkMode,
                     onChanged: _toggleDark,
+                  ),
+                ),
+                Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24 * scale),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _changePassword,
+                          icon: const Icon(Icons.key_rounded),
+                          label: const Text('Change password'),
+                        ),
+                      ),
+                      SizedBox(width: 12 * scale),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: _logout,
+                          icon: const Icon(Icons.lock_outline),
+                          label: const Text('Logout'),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
                 SizedBox(height: 8 * scale),

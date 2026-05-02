@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'firebase_options.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'services/state_cache.dart';
 
 import 'app.dart';
@@ -43,13 +42,6 @@ Future<void> main() async {
       // Keep booting in local-only mode.
     }
   }
-
-  try {
-    await FirebaseAuth.instance.signInAnonymously();
-  } catch (_) {
-    // Keep booting in local-only mode when anonymous auth is disabled.
-  }
-
   // Ensure local boxes exist for legacy reads during migration
   await Hive.initFlutter();
   await Hive.openBox('divers');
@@ -58,10 +50,10 @@ Future<void> main() async {
   await Hive.openBox('logs');
 
   try {
-    // Start Firestore listeners for shared state when available.
+    // Allow local UI to boot; authenticated screens will start listeners after login.
     await StateCache.init();
   } catch (_) {
-    // Firestore unavailable or denied; UI can still render from local state.
+    // Firestore unavailable or denied; UI can still render and auth can proceed.
   }
 
   runApp(const MyApp());

@@ -4,12 +4,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/constants.dart';
 import '../core/utils.dart';
+import '../services/auth_service.dart';
 import '../services/state_cache.dart';
 import '../widgets/top_alert.dart';
 import 'department_screen.dart';
 import 'history_page.dart';
 import 'settings_page.dart';
 import 'operator_screen.dart';
+import '../app.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -68,6 +70,30 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _confirmLogout() async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout == true) {
+      await MyApp.of(context)?.logout();
+    }
+  }
+
   void _startFlow(FlowMode flow) {
     if (flow == FlowMode.operator) {
       Navigator.push(
@@ -95,6 +121,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final scale = appScale(context);
     final topPad = MediaQuery.of(context).padding.top;
+    final AppUserProfile? profile = MyApp.of(context)?.currentProfile;
+    final displayName = (profile?.displayName?.trim().isNotEmpty ?? false)
+        ? profile!.displayName!.trim()
+        : 'there';
 
     return Scaffold(
       body: Stack(
@@ -188,6 +218,32 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               ],
+            ),
+          ),
+          Positioned(
+            bottom: 28 * scale,
+            left: 28 * scale,
+            child: OutlinedButton.icon(
+              onPressed: _confirmLogout,
+              icon: Icon(Icons.logout_rounded, size: 22 * scale),
+              label: Text('Logout', style: TextStyle(fontSize: 16 * scale)),
+            ),
+          ),
+          Positioned(
+            bottom: 28 * scale,
+            left: 0,
+            right: 0,
+            child: IgnorePointer(
+              child: Center(
+                child: Text(
+                  'Welcome, $displayName',
+                  style: TextStyle(
+                    fontSize: 22 * scale,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.blueGrey[800],
+                  ),
+                ),
+              ),
             ),
           ),
           Positioned(
