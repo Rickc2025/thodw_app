@@ -40,6 +40,7 @@ class AuthService {
         'role': 'admin',
         'active': true,
         'mustChangePassword': true,
+        'requirePasswordChange': true,
         'createdAt': FieldValue.serverTimestamp(),
         'createdBy': 'bootstrap',
       }, SetOptions(merge: true));
@@ -73,7 +74,7 @@ class AuthService {
 
   static Future<bool> currentUserMustChangePassword() async {
     final data = await currentUserProfile();
-    return data?['mustChangePassword'] == true;
+    return data?['mustChangePassword'] == true || data?['requirePasswordChange'] == true;
   }
 
   static Future<void> changeCurrentPassword(String newPassword) async {
@@ -82,6 +83,7 @@ class AuthService {
     await user.updatePassword(newPassword);
     await _firestore.collection('users').doc(user.uid).set({
       'mustChangePassword': false,
+      'requirePasswordChange': false,
       'lastPasswordChangedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
