@@ -31,18 +31,10 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
-    function emailMatchesMelcoId(melcoId) {
-      return signedIn() && request.auth.token.email == (melcoId + '@hodw.local');
-    }
-
-    function selfUserFieldsUnchanged() {
-      return request.resource.data.melcoId == resource.data.melcoId &&
-        request.resource.data.role == resource.data.role &&
-        request.resource.data.displayName == resource.data.displayName &&
-        request.resource.data.email == resource.data.email &&
-        request.resource.data.disabled == resource.data.disabled &&
-        request.resource.data.bootstrapAdmin == resource.data.bootstrapAdmin &&
-        request.resource.data.createdAt == resource.data.createdAt;
+    function selfCanClearPasswordChange() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['requirePasswordChange', 'updatedAt']) &&
+        request.resource.data.requirePasswordChange == false;
     }
 
     match /users/{uid} {
@@ -53,7 +45,7 @@ service cloud.firestore {
       allow update: if isAdmin() || (
         isSelf(uid) &&
         isActiveUser() &&
-        selfUserFieldsUnchanged()
+        selfCanClearPasswordChange()
       );
 
       allow delete: if false;
