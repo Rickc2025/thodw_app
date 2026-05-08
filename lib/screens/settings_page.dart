@@ -4,6 +4,7 @@ import 'package:hive/hive.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/state_cache.dart';
 import '../services/divers_service.dart';
+import '../services/provisioning_service.dart';
 
 import '../core/constants.dart';
 import '../core/departments.dart';
@@ -25,6 +26,7 @@ class _SettingsPageState extends State<SettingsPage> {
   int currentlyIn = 0;
   Timer? _timer;
   bool darkMode = false;
+  bool _provisioningBusy = false;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _diversSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _checkinsSub;
   List<Map<String, dynamic>> _divers = [];
@@ -82,13 +84,127 @@ class _SettingsPageState extends State<SettingsPage> {
     TopSnack.show(context, msg, duration: const Duration(seconds: 2));
   }
 
+  bool get _isAdmin => MyApp.of(context)?.isAdmin == true;
+
+  Future<void> _showCreateLoginUserDialog() async {
+    final nameController = TextEditingController();
+    final melcoController = TextEditingController();
+    String role = 'operator';
+    String? error;
+
+    final result = await showDialog<ProvisioningResult>(
+      context: context,
+      builder: (dialogContext) {
+        bool saving = false;
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Create login user'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(labelText: 'Employee name'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: melcoController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Melco ID'),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: role,
+                  decoration: const InputDecoration(labelText: 'Role'),
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'operator',
+                      child: Text('Operator'),
+                    ),
+                    DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                  ],
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setDialogState(() => role = value);
+                  },
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: saving ? null : () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: saving
+                    ? null
+                    : () async {
+                        setDialogState(() => error = null);
+                        setDialogState(() => saving = true);
+                        try {
+                          final provisioned = await MyApp.of(context)
+                              ?.createLoginUser(
+                                melcoId: melcoController.text,
+                                displayName: nameController.text,
+                                role: role,
+                              );
+                          if (dialogContext.mounted) {
+                            Navigator.pop(dialogContext, provisioned);
+                          }
+                        } catch (e) {
+                          setDialogState(
+                            () => error = e.toString().replaceFirst(
+                              'Exception: ',
+                              '',
+                            ),
+                          );
+                        } finally {
+                          if (dialogContext.mounted) {
+                            setDialogState(() => saving = false);
+                          }
+                        }
+                      },
+                child: const Text('Create'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    nameController.dispose();
+    melcoController.dispose();
+
+    if (!mounted || result == null) return;
+    _snack(
+      'Login user ready for ${result.displayName} (${result.email}). Temporary password: ${result.password}',
+    );
+  }
+
   void _showAddDialog() {
+    if (!_isAdmin) {
+      _snack('Only admins can add divers.');
+      return;
+    }
     _showDiverDialog(diver: null);
   }
 
   // (Old remove dialog removed; editing covers name/department updates. Implement removal if needed.)
 
   void _showEditDiverDialog(Map diver) {
+    if (!_isAdmin) {
+      _snack('Only admins can edit divers.');
+      return;
+    }
     _showDiverDialog(diver: diver);
   }
 
@@ -521,6 +637,10 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _resetCheckIns() {
+    if (!_isAdmin) {
+      _snack('Only admins can run New Day Reset.');
+      return;
+    }
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -619,81 +739,136 @@ class _SettingsPageState extends State<SettingsPage> {
                   ],
                 ),
                 SizedBox(height: 10 * scale),
-                // Top action buttons in one horizontal line, equal widths
+                // Top action buttons
                 Padding(
                   padding: EdgeInsets.symmetric(horizontal: 16 * scale),
-                  child: Row(
+                  child: Column(
                     children: [
-                      Expanded(
-                        child: SizedBox(
-                          height: 50 * scale,
-                          child: ElevatedButton.icon(
-                            icon: Icon(Icons.add, size: 22 * scale),
-                            label: Text(
-                              'Add Diver',
-                              style: TextStyle(fontSize: 16 * scale),
-                            ),
-                            onPressed: _showAddDialog,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blueAccent,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14 * scale),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 12 * scale),
-                      Expanded(
-                        child: SizedBox(
-                          height: 50 * scale,
-                          child: ElevatedButton.icon(
-                            icon: Icon(Icons.refresh, size: 22 * scale),
-                            label: Text(
-                              'New Day Reset (Checked‑In only)',
-                              style: TextStyle(fontSize: 16 * scale),
-                            ),
-                            onPressed: _resetCheckIns,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red[600],
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14 * scale),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      SizedBox(width: 12 * scale),
-                      Expanded(
-                        child: SizedBox(
-                          height: 50 * scale,
-                          child: ElevatedButton.icon(
-                            icon: Icon(Icons.history, size: 20 * scale),
-                            label: Text(
-                              'History of Dives',
-                              style: TextStyle(fontSize: 16 * scale),
-                            ),
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const HistoryPage(
-                                  selectedColor: 'ALL',
-                                  showTabs: false,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: SizedBox(
+                              height: 50 * scale,
+                              child: ElevatedButton.icon(
+                                icon: Icon(Icons.add, size: 22 * scale),
+                                label: Text(
+                                  'Add Diver',
+                                  style: TextStyle(fontSize: 16 * scale),
+                                ),
+                                onPressed: _showAddDialog,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blueAccent,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(
+                                      14 * scale,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.grey[200],
-                              foregroundColor: Colors.black,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(14 * scale),
+                          ),
+                          SizedBox(width: 12 * scale),
+                          Expanded(
+                            child: SizedBox(
+                              height: 50 * scale,
+                              child: ElevatedButton.icon(
+                                icon: Icon(Icons.refresh, size: 22 * scale),
+                                label: Text(
+                                  'New Day Reset (Checked‑In only)',
+                                  style: TextStyle(fontSize: 16 * scale),
+                                ),
+                                onPressed: _resetCheckIns,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red[600],
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(
+                                      14 * scale,
+                                    ),
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
+                          SizedBox(width: 12 * scale),
+                          Expanded(
+                            child: SizedBox(
+                              height: 50 * scale,
+                              child: ElevatedButton.icon(
+                                icon: Icon(Icons.history, size: 20 * scale),
+                                label: Text(
+                                  'History of Dives',
+                                  style: TextStyle(fontSize: 16 * scale),
+                                ),
+                                onPressed: () => Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const HistoryPage(
+                                      selectedColor: 'ALL',
+                                      showTabs: false,
+                                    ),
+                                  ),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.grey[200],
+                                  foregroundColor: Colors.black,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(
+                                      14 * scale,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
+                      if (_isAdmin) ...[
+                        SizedBox(height: 12 * scale),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Admin bootstrap stays server-side. Use the Cloudflare Worker once to create Ricardo\'s first admin account, then use Create Login User here for everyone else.',
+                            style: TextStyle(
+                              fontSize: 13 * scale,
+                              color: Colors.blueGrey[700],
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: 10 * scale),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: SizedBox(
+                                height: 48 * scale,
+                                child: OutlinedButton.icon(
+                                  onPressed: _provisioningBusy
+                                      ? null
+                                      : _showCreateLoginUserDialog,
+                                  icon: const Icon(Icons.person_add_alt_1),
+                                  label: const Text('Create Login User'),
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: 12 * scale),
+                            Expanded(
+                              child: SizedBox(
+                                height: 48 * scale,
+                                child: OutlinedButton.icon(
+                                  onPressed: null,
+                                  icon: const Icon(
+                                    Icons.admin_panel_settings_outlined,
+                                  ),
+                                  label: const Text(
+                                    'Bootstrap Admin via Worker',
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),

@@ -8,50 +8,82 @@ This app now uses Firebase Authentication plus a Firestore `users` collection.
 - Internal Firebase Auth email: `MELCO_ID@hodw.local`
 - Example: Melco ID `1015083` -> `1015083@hodw.local`
 
-## First admin bootstrap
+## Current secure path
 
-The app is prepared to auto-create the **Firestore user profile** for Ricardo's admin account on first successful login, but it **does not create the Firebase Auth password account itself** from client code.
+The old stuck/manual Firebase Console path is replaced by a **Cloudflare Worker provisioner** kept in:
 
-That means the one-time safe bootstrap step is:
+- `cloudflare-worker/`
 
-1. Open **Firebase Console** for project `aqx-dive-log`
-2. Go to **Authentication -> Users**
-3. Click **Add user**
-4. Create:
-   - Email: `1015083@hodw.local`
-   - Password: choose a temporary password and share it securely with Ricardo
-5. Ensure **Email/Password** provider is enabled in Authentication -> Sign-in method
-6. Deploy Firestore rules from this repo
-7. Ricardo logs in from the app with:
-   - Melco ID: `1015083`
-   - Password: the temporary password
-8. On first successful login, the app creates `/users/{uid}` with:
-   - `melcoId: 1015083`
-   - `role: admin`
-   - `requirePasswordChange: true`
-9. The app immediately forces a password change before normal access
+That Worker uses a Google service account to:
 
-## Provisioning additional users
+- create/update Firebase Auth email/password users
+- create/update Firestore `/users/{uid}` profile documents
+- force `requirePasswordChange: true`
+- keep Melco ID as the visible login name
 
-For each operator/admin:
+## Important security rule
 
-1. Create a Firebase Auth email/password user using `MELCO_ID@hodw.local`
-2. Create Firestore document `users/{uid}` with at least:
+**Do not put first-admin bootstrap secrets into the public Flutter web build.**
 
-```json
-{
-  "melcoId": "1234567",
-  "role": "operator",
-  "requirePasswordChange": true,
-  "displayName": "Optional Name"
-}
-```
+That means:
 
-Use `role: "admin"` only for admins.
+- first admin bootstrap is **server-side only** through the Worker
+- regular login-user creation can happen from the app **after an admin is already signed in**
+- the Worker checks the caller's Firebase ID token and Firestore role for `/users`
+
+## One-time first admin bootstrap
+
+Create Ricardo's first admin account through the Worker using:
+
+- Melco ID: `1015083`
+- display name: `Ricardo`
+- role: `admin`
+- temporary password: `Welcome2026`
+
+After that:
+
+1. Ricardo logs in with Melco ID `1015083`
+2. The app forces password change immediately
+3. Ricardo can create other login users from Settings
+
+## Worker config
+
+Configure these secrets/vars in Cloudflare Worker:
+
+- `GCP_SERVICE_ACCOUNT_JSON` = full contents of the Firebase service account JSON
+- `FIREBASE_WEB_API_KEY` = Firebase web API key for project `aqx-dive-log`
+- `BOOTSTRAP_TOKEN` = strong random one-time/admin bootstrap token
+
+## Worker endpoints
+
+- `POST /bootstrap-admin`
+  - protected by `BOOTSTRAP_TOKEN`
+  - for first admin only
+- `POST /users`
+  - requires Firebase ID token in `Authorization: Bearer ...`
+  - caller must already be an admin in Firestore
+
+## In-app behavior
+
+- login still uses Melco ID + password
+- first-login password change remains enforced
+- Settings now blocks non-admin users from:
+  - add/edit/remove divers
+  - New Day Reset
+  - login-user creation
+- admin users can create login users from Settings
+
+## Default password policy
+
+Current default temporary password for newly provisioned users:
+
+- `Welcome2026`
+
+Users must change it on first login.
 
 ## Notes
 
-- Plain passwords are **not** stored in this repo.
-- Anonymous auth must remain disabled for production access.
-- Non-admin UI is blocked from roster management and New Day Reset.
-- Firestore rules in this repo align with the role model, but New Day Reset is mainly enforced in app UI because it reuses normal writable collections.
+- Plain passwords are not stored in the repo beyond the documented temporary default policy.
+- Anonymous auth must remain disabled.
+- Do not replace this with a generic local app lock.
+- Preserve existing divers/log/checkins data.

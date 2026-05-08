@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'provisioning_service.dart';
+
 class AppUserProfile {
   final String uid;
   final String melcoId;
@@ -38,6 +40,7 @@ class AuthService {
 
   static const String melcoDomain = '@hodw.local';
   static const String bootstrapAdminMelcoId = '1015083';
+  static const String bootstrapAdminDisplayName = 'Ricardo';
 
   static FirebaseAuth get _auth => FirebaseAuth.instance;
   static FirebaseFirestore get _firestore => FirebaseFirestore.instance;
@@ -77,39 +80,41 @@ class AuthService {
       throw Exception('Enter a valid Melco ID.');
     }
 
-    final credential = await _auth.signInWithEmailAndPassword(
-      email: melcoIdToEmail(normalizedMelcoId),
-      password: password,
-    );
+    try {
+      final credential = await _auth.signInWithEmailAndPassword(
+        email: melcoIdToEmail(normalizedMelcoId),
+        password: password,
+      );
 
-    final user = credential.user;
-    if (user == null) {
-      throw Exception('Login failed. Please try again.');
-    }
-    if (user.isAnonymous) {
-      await _auth.signOut();
-      throw Exception('Anonymous access is not allowed. Please log in.');
-    }
+      final user = credential.user;
+      if (user == null) {
+        throw Exception('Login failed. Please try again.');
+      }
+      if (user.isAnonymous) {
+        await _auth.signOut();
+        throw Exception('Anonymous access is not allowed. Please log in.');
+      }
 
-    var profile = await getProfile(user.uid);
-
-    if (profile == null && normalizedMelcoId == bootstrapAdminMelcoId) {
-      await _users.doc(user.uid).set({
-        'melcoId': normalizedMelcoId,
-        'role': 'admin',
-        'requirePasswordChange': true,
-        'displayName': 'Ricardo',
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-        'bootstrapAdmin': true,
-      }, SetOptions(merge: true));
-      profile = await getProfile(user.uid);
+      final profile = await _loadValidatedProfile(
+        user: user,
+        normalizedMelcoId: normalizedMelcoId,
+      );
+      return profile;
+    } on FirebaseAuthException catch (e) {
+      throw Exception(_friendlyAuthMessage(e));
     }
+  }
+
+  static Future<AppUserProfile> _loadValidatedProfile({
+    required User user,
+    required String normalizedMelcoId,
+  }) async {
+    final profile = await getProfile(user.uid);
 
     if (profile == null) {
       await _auth.signOut();
       throw Exception(
-        'Your account is not provisioned yet. Ask an admin to create your users profile.',
+        'Your account is not provisioned yet. Ask an admin to create your login user first.',
       );
     }
 
@@ -119,6 +124,45 @@ class AuthService {
     }
 
     return profile;
+  }
+
+  static String _friendlyAuthMessage(FirebaseAuthException error) {
+    switch (error.code) {
+      case 'user-not-found':
+      case 'wrong-password':
+      case 'invalid-credential':
+        return 'Invalid Melco ID or password.';
+      case 'too-many-requests':
+        return 'Too many login attempts. Please wait a moment and try again.';
+      default:
+        return error.message ?? 'Login failed. Please try again.';
+    }
+  }
+
+  static Future<ProvisioningResult> createLoginUser({
+    required String melcoId,
+    required String displayName,
+    required String role,
+  }) {
+    final normalizedMelcoId = normalizeMelcoId(melcoId);
+    if (normalizedMelcoId.isEmpty) {
+      throw Exception('Enter a valid Melco ID.');
+    }
+    if (displayName.trim().isEmpty) {
+      throw Exception('Enter the employee name.');
+    }
+    final normalizedRole = role.trim().toLowerCase();
+    if (normalizedRole != 'admin' && normalizedRole != 'operator') {
+      throw Exception('Role must be admin or operator.');
+    }
+    if (!ProvisioningService.isConfigured) {
+      throw Exception('Provisioning service is not configured yet.');
+    }
+    return ProvisioningService.createLoginUser(
+      melcoId: normalizedMelcoId,
+      displayName: displayName.trim(),
+      role: normalizedRole,
+    );
   }
 
   static Future<void> changePassword({required String newPassword}) async {

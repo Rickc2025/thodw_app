@@ -8,6 +8,7 @@ import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/password_change_screen.dart';
 import 'services/auth_service.dart';
+import 'services/provisioning_service.dart';
 import 'services/state_cache.dart';
 
 class MyApp extends StatefulWidget {
@@ -111,6 +112,18 @@ class _MyAppState extends State<MyApp> {
 
   Future<void> changePassword(String nextPassword) async {
     await AuthService.changePassword(newPassword: nextPassword);
+  }
+
+  Future<ProvisioningResult> createLoginUser({
+    required String melcoId,
+    required String displayName,
+    required String role,
+  }) async {
+    return AuthService.createLoginUser(
+      melcoId: melcoId,
+      displayName: displayName,
+      role: role,
+    );
   }
 
   @override
