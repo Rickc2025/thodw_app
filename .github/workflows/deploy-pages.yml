@@ -39,9 +39,11 @@ jobs:
         run: |
           # Try modern flags first; fall back to dart-define for older Flutter
           (flutter build web --release --base-href "/thodw_app/" --web-renderer html --pwa-strategy=none \
-            --dart-define=BUILD_TIME=${BUILD_TIME} --dart-define=GIT_SHA=${GIT_SHA}) || \
+            --dart-define=BUILD_TIME=${BUILD_TIME} --dart-define=GIT_SHA=${GIT_SHA} \
+            --dart-define=THODW_PROVISIONER_URL=https://thodw-auth-provisioner.aqxdivelog.workers.dev) || \
           (flutter build web --release --base-href "/thodw_app/" --dart-define=FLUTTER_WEB_USE_SKIA=false \
-            --dart-define=BUILD_TIME=${BUILD_TIME} --dart-define=GIT_SHA=${GIT_SHA})
+            --dart-define=BUILD_TIME=${BUILD_TIME} --dart-define=GIT_SHA=${GIT_SHA} \
+            --dart-define=THODW_PROVISIONER_URL=https://thodw-auth-provisioner.aqxdivelog.workers.dev)
           # Disable service worker for older iPad/Safari compatibility
           rm -f build/web/flutter_service_worker.js || true
           sed -i 's/serviceWorkerSettings:\s*{[^}]*}/serviceWorkerSettings: null/g' build/web/flutter_bootstrap.js || true
