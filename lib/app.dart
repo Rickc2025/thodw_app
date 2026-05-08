@@ -7,6 +7,7 @@ import 'package:hive/hive.dart';
 import 'screens/home_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/password_change_screen.dart';
+import 'services/admin_service.dart';
 import 'services/auth_service.dart';
 import 'services/provisioning_service.dart';
 import 'services/state_cache.dart';
@@ -124,6 +125,21 @@ class _MyAppState extends State<MyApp> {
       displayName: displayName,
       role: role,
     );
+  }
+
+  Future<List<AdminManagedUser>> listManagedUsers() async {
+    return AdminService.listUsers();
+  }
+
+  Future<PasswordResetResult> resetManagedUserPassword(String uid) async {
+    return AdminService.resetPassword(uid);
+  }
+
+  Future<void> setManagedUserDisabled({
+    required String uid,
+    required bool disabled,
+  }) async {
+    await AdminService.setDisabled(uid: uid, disabled: disabled);
   }
 
   @override

@@ -19,6 +19,9 @@ That Worker uses a Google service account to:
 - create/update Firebase Auth email/password users
 - create/update Firestore `/users/{uid}` profile documents
 - force `requirePasswordChange: true`
+- reset passwords to the default temporary password when admins request it
+- enable/disable login users without exposing direct admin mutation in the client
+- write admin audit entries to Firestore `audit_logs`
 - keep Melco ID as the visible login name
 
 ## Important security rule
@@ -59,9 +62,16 @@ Configure these secrets/vars in Cloudflare Worker:
 - `POST /bootstrap-admin`
   - protected by `BOOTSTRAP_TOKEN`
   - for first admin only
+- `GET /users`
+  - requires Firebase ID token in `Authorization: Bearer ...`
+  - caller must already be an active admin in Firestore
 - `POST /users`
   - requires Firebase ID token in `Authorization: Bearer ...`
-  - caller must already be an admin in Firestore
+  - caller must already be an active admin in Firestore
+- `POST /users/reset-password`
+  - resets target user password to the current temporary default and flags password change required
+- `POST /users/set-disabled`
+  - enables/disables target login users (bootstrap admin cannot be disabled)
 
 ## In-app behavior
 

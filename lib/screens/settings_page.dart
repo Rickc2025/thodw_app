@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/state_cache.dart';
+import '../services/admin_service.dart';
 import '../services/divers_service.dart';
 import '../services/provisioning_service.dart';
 
@@ -27,6 +28,7 @@ class _SettingsPageState extends State<SettingsPage> {
   Timer? _timer;
   bool darkMode = false;
   bool _provisioningBusy = false;
+  bool _managedUsersBusy = false;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _diversSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _checkinsSub;
   List<Map<String, dynamic>> _divers = [];
@@ -85,6 +87,124 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   bool get _isAdmin => MyApp.of(context)?.isAdmin == true;
+
+  Future<void> _showManageLoginUsersDialog() async {
+    if (_managedUsersBusy) return;
+    setState(() => _managedUsersBusy = true);
+    try {
+      final users = await MyApp.of(context)?.listManagedUsers() ?? const [];
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            title: const Text('Manage login users'),
+            content: SizedBox(
+              width: 560,
+              child: users.isEmpty
+                  ? const Text('No login users found.')
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: users.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, index) {
+                        final user = users[index];
+                        final subtitle = [
+                          user.melcoId,
+                          user.role.toUpperCase(),
+                          if (user.disabled) 'DISABLED',
+                          if (user.requirePasswordChange)
+                            'PASSWORD CHANGE REQUIRED',
+                          if (user.bootstrapAdmin) 'BOOTSTRAP ADMIN',
+                        ].join(' • ');
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            user.displayName.isEmpty
+                                ? user.melcoId
+                                : user.displayName,
+                          ),
+                          subtitle: Text(subtitle),
+                          trailing: Wrap(
+                            spacing: 8,
+                            children: [
+                              TextButton(
+                                onPressed: () async {
+                                  try {
+                                    final result = await MyApp.of(
+                                      context,
+                                    )?.resetManagedUserPassword(user.uid);
+                                    if (!dialogContext.mounted ||
+                                        result == null)
+                                      return;
+                                    _snack(
+                                      'Password reset for ${result.displayName} (${result.email}). Temporary password: ${result.password}',
+                                    );
+                                  } catch (e) {
+                                    _snack(
+                                      e.toString().replaceFirst(
+                                        'Exception: ',
+                                        '',
+                                      ),
+                                    );
+                                  }
+                                },
+                                child: const Text('Reset Password'),
+                              ),
+                              if (!user.bootstrapAdmin)
+                                TextButton(
+                                  onPressed: () async {
+                                    try {
+                                      await MyApp.of(
+                                        context,
+                                      )?.setManagedUserDisabled(
+                                        uid: user.uid,
+                                        disabled: !user.disabled,
+                                      );
+                                      if (!dialogContext.mounted) return;
+                                      Navigator.pop(dialogContext);
+                                      _snack(
+                                        user.disabled
+                                            ? 'User enabled.'
+                                            : 'User disabled.',
+                                      );
+                                      _showManageLoginUsersDialog();
+                                    } catch (e) {
+                                      _snack(
+                                        e.toString().replaceFirst(
+                                          'Exception: ',
+                                          '',
+                                        ),
+                                      );
+                                    }
+                                  },
+                                  child: Text(
+                                    user.disabled ? 'Enable' : 'Disable',
+                                  ),
+                                ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        _snack(e.toString().replaceFirst('Exception: ', ''));
+      }
+    } finally {
+      if (mounted) setState(() => _managedUsersBusy = false);
+    }
+  }
 
   Future<void> _showCreateLoginUserDialog() async {
     final nameController = TextEditingController();
@@ -829,7 +949,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         Align(
                           alignment: Alignment.centerLeft,
                           child: Text(
-                            'Admin bootstrap stays server-side. Use the Cloudflare Worker once to create Ricardo\'s first admin account, then use Create Login User here for everyone else.',
+                            'Admin bootstrap stays server-side. Use Create Login User for new accounts and Manage Login Users for resets / enable / disable actions.',
                             style: TextStyle(
                               fontSize: 13 * scale,
                               color: Colors.blueGrey[700],
@@ -856,13 +976,13 @@ class _SettingsPageState extends State<SettingsPage> {
                               child: SizedBox(
                                 height: 48 * scale,
                                 child: OutlinedButton.icon(
-                                  onPressed: null,
+                                  onPressed: _managedUsersBusy
+                                      ? null
+                                      : _showManageLoginUsersDialog,
                                   icon: const Icon(
-                                    Icons.admin_panel_settings_outlined,
+                                    Icons.manage_accounts_outlined,
                                   ),
-                                  label: const Text(
-                                    'Bootstrap Admin via Worker',
-                                  ),
+                                  label: const Text('Manage Login Users'),
                                 ),
                               ),
                             ),
