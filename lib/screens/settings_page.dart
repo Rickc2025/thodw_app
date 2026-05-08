@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/state_cache.dart';
-import '../services/admin_service.dart';
 import '../services/divers_service.dart';
 import '../services/provisioning_service.dart';
 
@@ -678,10 +677,11 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _changePassword() async {
+    final currentController = TextEditingController();
     final controller = TextEditingController();
     final confirmController = TextEditingController();
     String? error;
-    final result = await showDialog<String>(
+    final result = await showDialog<Map<String, String>>(
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
@@ -690,6 +690,14 @@ class _SettingsPageState extends State<SettingsPage> {
             content: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                TextField(
+                  controller: currentController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Current password',
+                  ),
+                ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: controller,
                   obscureText: true,
@@ -721,8 +729,15 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               FilledButton(
                 onPressed: () {
+                  final current = currentController.text.trim();
                   final next = controller.text.trim();
                   final confirm = confirmController.text.trim();
+                  if (current.isEmpty) {
+                    setDialogState(
+                      () => error = 'Enter your current password first.',
+                    );
+                    return;
+                  }
                   if (next.length < 6) {
                     setDialogState(
                       () => error = 'Password must be at least 6 characters.',
@@ -733,7 +748,10 @@ class _SettingsPageState extends State<SettingsPage> {
                     setDialogState(() => error = 'Passwords do not match.');
                     return;
                   }
-                  Navigator.pop(dialogContext, next);
+                  Navigator.pop(dialogContext, {
+                    'current': current,
+                    'next': next,
+                  });
                 },
                 child: const Text('Save'),
               ),
@@ -742,12 +760,15 @@ class _SettingsPageState extends State<SettingsPage> {
         );
       },
     );
+    currentController.dispose();
     controller.dispose();
     confirmController.dispose();
 
     if (result == null) return;
     try {
-      await MyApp.of(context)?.changePassword(result);
+      await MyApp.of(
+        context,
+      )?.changePassword(result['next']!, currentPassword: result['current']);
       if (mounted) _snack('Password updated.');
     } catch (e) {
       if (mounted) {

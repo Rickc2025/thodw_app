@@ -165,13 +165,39 @@ class AuthService {
     );
   }
 
-  static Future<void> changePassword({required String newPassword}) async {
+  static Future<void> changePassword({
+    required String newPassword,
+    String? currentPassword,
+  }) async {
     final user = _auth.currentUser;
     if (user == null || user.isAnonymous) {
       throw Exception('You must be logged in to change password.');
     }
     if (newPassword.trim().length < 6) {
       throw Exception('Password must be at least 6 characters.');
+    }
+
+    final needsReauth = currentPassword != null;
+    if (needsReauth) {
+      final email = user.email;
+      if (email == null || email.isEmpty) {
+        throw Exception('Could not verify current password for this account.');
+      }
+      final credential = EmailAuthProvider.credential(
+        email: email,
+        password: currentPassword,
+      );
+      try {
+        await user.reauthenticateWithCredential(credential);
+      } on FirebaseAuthException catch (e) {
+        switch (e.code) {
+          case 'wrong-password':
+          case 'invalid-credential':
+            throw Exception('Current password is incorrect.');
+          default:
+            throw Exception(e.message ?? 'Could not verify current password.');
+        }
+      }
     }
 
     await user.updatePassword(newPassword.trim());

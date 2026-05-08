@@ -111,8 +111,14 @@ class _MyAppState extends State<MyApp> {
     await AuthService.signOut();
   }
 
-  Future<void> changePassword(String nextPassword) async {
-    await AuthService.changePassword(newPassword: nextPassword);
+  Future<void> changePassword(
+    String nextPassword, {
+    String? currentPassword,
+  }) async {
+    await AuthService.changePassword(
+      newPassword: nextPassword,
+      currentPassword: currentPassword,
+    );
   }
 
   Future<ProvisioningResult> createLoginUser({
