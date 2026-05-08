@@ -115,9 +115,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(height: 12),
                 Text(
                   error!,
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
               ],
             ],
@@ -130,9 +128,9 @@ class _SettingsPageState extends State<SettingsPage> {
             FilledButton(
               onPressed: () async {
                 try {
-                  await MyApp.of(context)?.verifyCurrentPassword(
-                    controller.text,
-                  );
+                  await MyApp.of(
+                    context,
+                  )?.verifyCurrentPassword(controller.text);
                   if (dialogContext.mounted) {
                     Navigator.pop(dialogContext, true);
                   }
@@ -350,6 +348,14 @@ class _SettingsPageState extends State<SettingsPage> {
                     ? null
                     : () async {
                         setDialogState(() => error = null);
+                        final ok = await _confirmCurrentPassword(
+                          title: 'Verify before creating login user',
+                          message:
+                              'Enter your current password before creating a new login user.',
+                        );
+                        if (!ok) {
+                          return;
+                        }
                         setDialogState(() => saving = true);
                         try {
                           final provisioned = await MyApp.of(context)
