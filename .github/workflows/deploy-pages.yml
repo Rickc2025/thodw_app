@@ -47,6 +47,83 @@ jobs:
           # Disable service worker for older iPad/Safari compatibility
           rm -f build/web/flutter_service_worker.js || true
           sed -i 's/serviceWorkerSettings:\s*{[^}]*}/serviceWorkerSettings: null/g' build/web/flutter_bootstrap.js || true
+          cat > build/web/build-info.json <<EOF
+          {"git_sha":"${GIT_SHA}","build_time":"${BUILD_TIME}"}
+          EOF
+          python - <<'PY'
+          from pathlib import Path
+          import os
+
+          root = Path('build/web')
+          git_sha = os.environ['GIT_SHA']
+
+          bootstrap = root / 'flutter_bootstrap.js'
+          text = bootstrap.read_text(encoding='utf-8')
+          text = text.replace('"mainJsPath":"main.dart.js"', f'"mainJsPath":"main.dart.js?v={git_sha}"')
+          bootstrap.write_text(text, encoding='utf-8')
+
+          index = root / 'index.html'
+          html = index.read_text(encoding='utf-8')
+          loader = f'''  <script>
+            (function() {{
+              var fallbackSha = "{git_sha}";
+              var storageKey = 'thodw_build_sha';
+
+              function loadApp(sha) {{
+                var script = document.createElement('script');
+                script.src = 'flutter_bootstrap.js?v=' + encodeURIComponent(sha || fallbackSha);
+                script.async = true;
+                document.body.appendChild(script);
+              }}
+
+              function reloadForNewBuild(sha) {{
+                try {{
+                  localStorage.setItem(storageKey, sha);
+                }} catch (_) {{}}
+
+                var done = function() {{
+                  var url = new URL(window.location.href);
+                  url.searchParams.set('v', sha);
+                  window.location.replace(url.toString());
+                }};
+
+                if ('caches' in window) {{
+                  caches.keys().then(function(keys) {{
+                    return Promise.all(keys.map(function(key) {{ return caches.delete(key); }}));
+                  }}).finally(done);
+                  return;
+                }}
+
+                done();
+              }}
+
+              function start(infoSha) {{
+                var sha = infoSha || fallbackSha;
+                var previous = null;
+                try {{
+                  previous = localStorage.getItem(storageKey);
+                }} catch (_) {{}}
+
+                if (previous && previous !== sha) {{
+                  reloadForNewBuild(sha);
+                  return;
+                }}
+
+                try {{
+                  localStorage.setItem(storageKey, sha);
+                }} catch (_) {{}}
+                loadApp(sha);
+              }}
+
+              fetch('build-info.json?v=' + Date.now(), {{ cache: 'no-store' }})
+                .then(function(response) {{ return response.json(); }})
+                .then(function(info) {{ start(info.git_sha); }})
+                .catch(function() {{ start(fallbackSha); }});
+            }})();
+          </script>'''
+          html = html.replace('<script src="flutter_bootstrap.js" async></script>', loader)
+          index.write_text(html, encoding='utf-8')
+          PY
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
