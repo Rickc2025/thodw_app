@@ -148,6 +148,10 @@ class _MyAppState extends State<MyApp> {
     await AdminService.setDisabled(uid: uid, disabled: disabled);
   }
 
+  Future<void> verifyCurrentPassword(String currentPassword) async {
+    await AuthService.reauthenticate(currentPassword: currentPassword);
+  }
+
   @override
   void dispose() {
     _authSub?.cancel();

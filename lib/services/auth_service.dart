@@ -179,25 +179,7 @@ class AuthService {
 
     final needsReauth = currentPassword != null;
     if (needsReauth) {
-      final email = user.email;
-      if (email == null || email.isEmpty) {
-        throw Exception('Could not verify current password for this account.');
-      }
-      final credential = EmailAuthProvider.credential(
-        email: email,
-        password: currentPassword,
-      );
-      try {
-        await user.reauthenticateWithCredential(credential);
-      } on FirebaseAuthException catch (e) {
-        switch (e.code) {
-          case 'wrong-password':
-          case 'invalid-credential':
-            throw Exception('Current password is incorrect.');
-          default:
-            throw Exception(e.message ?? 'Could not verify current password.');
-        }
-      }
+      await reauthenticate(currentPassword: currentPassword);
     }
 
     await user.updatePassword(newPassword.trim());
@@ -205,6 +187,36 @@ class AuthService {
       'requirePasswordChange': false,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+  }
+
+  static Future<void> reauthenticate({required String currentPassword}) async {
+    final user = _auth.currentUser;
+    if (user == null || user.isAnonymous) {
+      throw Exception('You must be logged in to verify your password.');
+    }
+    final email = user.email;
+    if (email == null || email.isEmpty) {
+      throw Exception('Could not verify current password for this account.');
+    }
+    if (currentPassword.trim().isEmpty) {
+      throw Exception('Enter your current password first.');
+    }
+
+    final credential = EmailAuthProvider.credential(
+      email: email,
+      password: currentPassword.trim(),
+    );
+    try {
+      await user.reauthenticateWithCredential(credential);
+    } on FirebaseAuthException catch (e) {
+      switch (e.code) {
+        case 'wrong-password':
+        case 'invalid-credential':
+          throw Exception('Current password is incorrect.');
+        default:
+          throw Exception(e.message ?? 'Could not verify current password.');
+      }
+    }
   }
 
   static Future<void> signOut() => _auth.signOut();

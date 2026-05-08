@@ -87,6 +87,72 @@ class _SettingsPageState extends State<SettingsPage> {
 
   bool get _isAdmin => MyApp.of(context)?.isAdmin == true;
 
+  Future<bool> _confirmCurrentPassword({
+    String title = 'Verify current password',
+    String message = 'Enter your current password to continue.',
+  }) async {
+    final controller = TextEditingController();
+    String? error;
+
+    final verified = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(message),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Current password',
+                ),
+              ),
+              if (error != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  error!,
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                try {
+                  await MyApp.of(context)?.verifyCurrentPassword(
+                    controller.text,
+                  );
+                  if (dialogContext.mounted) {
+                    Navigator.pop(dialogContext, true);
+                  }
+                } catch (e) {
+                  setDialogState(
+                    () => error = e.toString().replaceFirst('Exception: ', ''),
+                  );
+                }
+              },
+              child: const Text('Verify'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    controller.dispose();
+    return verified == true;
+  }
+
   Future<void> _showManageLoginUsersDialog() async {
     if (_managedUsersBusy) return;
     setState(() => _managedUsersBusy = true);
@@ -129,13 +195,20 @@ class _SettingsPageState extends State<SettingsPage> {
                             children: [
                               TextButton(
                                 onPressed: () async {
+                                  final ok = await _confirmCurrentPassword(
+                                    title: 'Verify before password reset',
+                                    message:
+                                        'Enter your current password before resetting this user password.',
+                                  );
+                                  if (!ok) return;
                                   try {
                                     final result = await MyApp.of(
                                       context,
                                     )?.resetManagedUserPassword(user.uid);
                                     if (!dialogContext.mounted ||
-                                        result == null)
+                                        result == null) {
                                       return;
+                                    }
                                     _snack(
                                       'Password reset for ${result.displayName} (${result.email}). Temporary password: ${result.password}',
                                     );
@@ -153,6 +226,15 @@ class _SettingsPageState extends State<SettingsPage> {
                               if (!user.bootstrapAdmin)
                                 TextButton(
                                   onPressed: () async {
+                                    final ok = await _confirmCurrentPassword(
+                                      title: user.disabled
+                                          ? 'Verify before enabling user'
+                                          : 'Verify before disabling user',
+                                      message: user.disabled
+                                          ? 'Enter your current password before enabling this user.'
+                                          : 'Enter your current password before disabling this user.',
+                                    );
+                                    if (!ok) return;
                                     try {
                                       await MyApp.of(
                                         context,
