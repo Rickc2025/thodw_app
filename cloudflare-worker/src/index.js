@@ -13,11 +13,22 @@ export default {
     }
 
     try {
+      const url = new URL(request.url);
+
+      if (request.method === 'GET') {
+        return json({
+          ok: true,
+          service: 'thodw-auth-provisioner',
+          status: 'ready',
+          endpoints: ['POST /bootstrap-admin', 'POST /users'],
+          note: 'Open in browser = health check only. This worker expects POST for provisioning calls.',
+        });
+      }
+
       if (request.method !== 'POST') {
         return json({ error: 'Method not allowed.' }, 405);
       }
 
-      const url = new URL(request.url);
       const body = await request.json().catch(() => ({}));
 
       if (url.pathname === '/bootstrap-admin') {
