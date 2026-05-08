@@ -160,120 +160,169 @@ class _SettingsPageState extends State<SettingsPage> {
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
-            title: const Text('Manage login users'),
-            content: SizedBox(
-              width: 560,
-              child: users.isEmpty
-                  ? const Text('No login users found.')
-                  : ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: users.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final user = users[index];
-                        final subtitle = [
-                          user.melcoId,
-                          user.role.toUpperCase(),
-                          if (user.disabled) 'DISABLED',
-                          if (user.requirePasswordChange)
-                            'PASSWORD CHANGE REQUIRED',
-                          if (user.bootstrapAdmin) 'BOOTSTRAP ADMIN',
-                        ].join(' • ');
-                        return ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(
-                            user.displayName.isEmpty
-                                ? user.melcoId
-                                : user.displayName,
-                          ),
-                          subtitle: Text(subtitle),
-                          trailing: Wrap(
-                            spacing: 8,
-                            children: [
-                              TextButton(
-                                onPressed: () async {
-                                  final ok = await _confirmCurrentPassword(
-                                    title: 'Verify before password reset',
-                                    message:
-                                        'Enter your current password before resetting this user password.',
-                                  );
-                                  if (!ok) return;
-                                  try {
-                                    final result = await MyApp.of(
-                                      context,
-                                    )?.resetManagedUserPassword(user.uid);
-                                    if (!dialogContext.mounted ||
-                                        result == null) {
-                                      return;
-                                    }
-                                    _snack(
-                                      'Password reset for ${result.displayName} (${result.email}). Temporary password: ${result.password}',
-                                    );
-                                  } catch (e) {
-                                    _snack(
-                                      e.toString().replaceFirst(
-                                        'Exception: ',
-                                        '',
-                                      ),
-                                    );
-                                  }
-                                },
-                                child: const Text('Reset Password'),
-                              ),
-                              if (!user.bootstrapAdmin)
-                                TextButton(
-                                  onPressed: () async {
-                                    final ok = await _confirmCurrentPassword(
-                                      title: user.disabled
-                                          ? 'Verify before enabling user'
-                                          : 'Verify before disabling user',
-                                      message: user.disabled
-                                          ? 'Enter your current password before enabling this user.'
-                                          : 'Enter your current password before disabling this user.',
-                                    );
-                                    if (!ok) return;
-                                    try {
-                                      await MyApp.of(
-                                        context,
-                                      )?.setManagedUserDisabled(
-                                        uid: user.uid,
-                                        disabled: !user.disabled,
-                                      );
-                                      if (!dialogContext.mounted) return;
-                                      Navigator.pop(dialogContext);
-                                      _snack(
-                                        user.disabled
-                                            ? 'User enabled.'
-                                            : 'User disabled.',
-                                      );
-                                      _showManageLoginUsersDialog();
-                                    } catch (e) {
-                                      _snack(
-                                        e.toString().replaceFirst(
-                                          'Exception: ',
-                                          '',
+          builder: (context, setDialogState) {
+            final screenWidth = MediaQuery.of(context).size.width;
+            final dialogWidth = screenWidth < 420 ? screenWidth * 0.92 : 560.0;
+            final compact = screenWidth < 520;
+
+            return AlertDialog(
+              title: const Text('Manage login users'),
+              content: SizedBox(
+                width: dialogWidth,
+                child: users.isEmpty
+                    ? const Text('No login users found.')
+                    : ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.of(context).size.height * 0.6,
+                        ),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: users.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final user = users[index];
+                            final subtitle = [
+                              user.melcoId,
+                              user.role.toUpperCase(),
+                              if (user.disabled) 'DISABLED',
+                              if (user.requirePasswordChange)
+                                'PASSWORD CHANGE REQUIRED',
+                              if (user.bootstrapAdmin) 'BOOTSTRAP ADMIN',
+                            ].join(' • ');
+
+                            Future<void> handleReset() async {
+                              final ok = await _confirmCurrentPassword(
+                                title: 'Verify before password reset',
+                                message:
+                                    'Enter your current password before resetting this user password.',
+                              );
+                              if (!ok) return;
+                              try {
+                                final result = await MyApp.of(
+                                  context,
+                                )?.resetManagedUserPassword(user.uid);
+                                if (!dialogContext.mounted || result == null) {
+                                  return;
+                                }
+                                _snack(
+                                  'Password reset for ${result.displayName} (${result.email}). Temporary password: ${result.password}',
+                                );
+                              } catch (e) {
+                                _snack(
+                                  e.toString().replaceFirst('Exception: ', ''),
+                                );
+                              }
+                            }
+
+                            Future<void> handleToggleDisabled() async {
+                              final ok = await _confirmCurrentPassword(
+                                title: user.disabled
+                                    ? 'Verify before enabling user'
+                                    : 'Verify before disabling user',
+                                message: user.disabled
+                                    ? 'Enter your current password before enabling this user.'
+                                    : 'Enter your current password before disabling this user.',
+                              );
+                              if (!ok) return;
+                              try {
+                                await MyApp.of(context)?.setManagedUserDisabled(
+                                  uid: user.uid,
+                                  disabled: !user.disabled,
+                                );
+                                if (!dialogContext.mounted) return;
+                                Navigator.pop(dialogContext);
+                                _snack(
+                                  user.disabled
+                                      ? 'User enabled.'
+                                      : 'User disabled.',
+                                );
+                                _showManageLoginUsersDialog();
+                              } catch (e) {
+                                _snack(
+                                  e.toString().replaceFirst('Exception: ', ''),
+                                );
+                              }
+                            }
+
+                            final actions = compact
+                                ? Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      SizedBox(
+                                        width: double.infinity,
+                                        child: OutlinedButton(
+                                          onPressed: handleReset,
+                                          child: const Text('Reset Password'),
                                         ),
-                                      );
-                                    }
-                                  },
-                                  child: Text(
-                                    user.disabled ? 'Enable' : 'Disable',
-                                  ),
+                                      ),
+                                      if (!user.bootstrapAdmin) ...[
+                                        const SizedBox(height: 8),
+                                        SizedBox(
+                                          width: double.infinity,
+                                          child: OutlinedButton(
+                                            onPressed: handleToggleDisabled,
+                                            child: Text(
+                                              user.disabled ? 'Enable' : 'Disable',
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ],
+                                  )
+                                : Wrap(
+                                    spacing: 8,
+                                    runSpacing: 8,
+                                    children: [
+                                      OutlinedButton(
+                                        onPressed: handleReset,
+                                        child: const Text('Reset Password'),
+                                      ),
+                                      if (!user.bootstrapAdmin)
+                                        OutlinedButton(
+                                          onPressed: handleToggleDisabled,
+                                          child: Text(
+                                            user.disabled ? 'Enable' : 'Disable',
+                                          ),
+                                        ),
+                                    ],
+                                  );
+
+                            return Card(
+                              margin: EdgeInsets.zero,
+                              child: Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      user.displayName.isEmpty
+                                          ? user.melcoId
+                                          : user.displayName,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium
+                                          ?.copyWith(fontWeight: FontWeight.w600),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(subtitle),
+                                    const SizedBox(height: 12),
+                                    actions,
+                                  ],
                                 ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Close'),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
               ),
-            ],
-          ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
         ),
       );
     } catch (e) {
