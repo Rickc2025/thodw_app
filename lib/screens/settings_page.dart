@@ -915,10 +915,6 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   void _resetCheckIns() {
-    if (!_isAdmin) {
-      _snack('Only admins can run New Day Reset.');
-      return;
-    }
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
