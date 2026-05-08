@@ -230,11 +230,21 @@ async function handleResetPassword(body, env, request) {
   }
 
   const email = targetProfile.email || melcoToEmail(targetProfile.melcoId);
-  await updateAuthUser(accessToken, uid, {
-    email,
-    displayName: targetProfile.displayName,
-    password: DEFAULT_PASSWORD,
-  });
+  try {
+    await updateAuthUser(accessToken, uid, {
+      email,
+      displayName: targetProfile.displayName,
+      password: DEFAULT_PASSWORD,
+    });
+  } catch (error) {
+    const message = String(error?.message || '');
+    if (message.includes('QUOTA_EXCEEDED')) {
+      throw new Error(
+        'Firebase Auth temporarily refused the password reset because of a rate/quota limit. Wait a moment and try again.',
+      );
+    }
+    throw error;
+  }
 
   await upsertFirestoreUser(accessToken, uid, {
     melcoId: targetProfile.melcoId,
@@ -605,32 +615,28 @@ async function lookupUserByEmail(accessToken, email) {
 }
 
 async function createAuthUser(accessToken, env, { email, password, displayName }) {
-  const apiKey = env.FIREBASE_WEB_API_KEY;
-  if (!apiKey) {
-    throw new Error('FIREBASE_WEB_API_KEY is not configured on the worker.');
-  }
+  const localId = crypto.randomUUID();
 
-  const signUpUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${encodeURIComponent(apiKey)}`;
-  const response = await fetch(signUpUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      email,
-      password,
-      returnSecureToken: false,
-    }),
-  });
-
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const message = data?.error?.message || 'Failed to create Firebase Auth user.';
-    throw new Error(message);
-  }
-
-  const localId = data.localId;
-  if (!localId) {
-    throw new Error('Firebase Auth did not return a local user ID.');
-  }
+  await authorizedFetch(
+    `https://identitytoolkit.googleapis.com/v1/projects/${PROJECT_ID}/accounts:batchCreate`,
+    accessToken,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        hashAlgorithm: 'BCRYPT',
+        allowOverwrite: false,
+        users: [
+          {
+            localId,
+            email,
+            passwordHash: btoa(password),
+            displayName,
+            emailVerified: true,
+          },
+        ],
+      }),
+    },
+  );
 
   await updateAuthUser(accessToken, localId, {
     email,
