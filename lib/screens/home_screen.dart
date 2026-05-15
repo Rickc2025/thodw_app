@@ -4,10 +4,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/constants.dart';
 import '../core/utils.dart';
+import '../services/auth_service.dart';
 import '../services/state_cache.dart';
+import '../services/user_context.dart';
 import '../widgets/top_alert.dart';
 import 'department_screen.dart';
 import 'history_page.dart';
+import 'login_screen.dart';
 import 'settings_page.dart';
 import 'operator_screen.dart';
 
@@ -68,6 +71,30 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Future<void> _confirmLogout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Do you want to log out?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(context, true), child: const Text('Logout')),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      UserContext.clear();
+      await AuthService.signOut();
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    }
+  }
+
   void _startFlow(FlowMode flow) {
     if (flow == FlowMode.operator) {
       Navigator.push(
@@ -125,6 +152,16 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                if ((UserContext.displayName ?? '').trim().isNotEmpty) ...[
+                  Text(
+                    'Welcome, ${UserContext.displayName!}',
+                    style: TextStyle(
+                      fontSize: 24 * scale,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  SizedBox(height: 10 * scale),
+                ],
                 Text(
                   "Select mode:",
                   style: TextStyle(
@@ -192,12 +229,23 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           Positioned(
             bottom: 32 * scale,
-            right: 32 * scale,
+            left: 32 * scale,
             child: IconButton(
-              tooltip: "Settings",
-              icon: Icon(Icons.settings, size: 40 * scale),
-              onPressed: _openSettings,
+              tooltip: 'Logout',
+              icon: Icon(Icons.logout, size: 40 * scale),
+              onPressed: _confirmLogout,
             ),
+          ),
+          Positioned(
+            bottom: 32 * scale,
+            right: 32 * scale,
+            child: UserContext.isAdmin
+                ? IconButton(
+                    tooltip: "Settings",
+                    icon: Icon(Icons.settings, size: 40 * scale),
+                    onPressed: _openSettings,
+                  )
+                : const SizedBox.shrink(),
           ),
         ],
       ),

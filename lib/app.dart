@@ -1,31 +1,38 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:hive/hive.dart';
 
+import 'screens/force_password_change_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/login_screen.dart';
+import 'services/auth_service.dart';
+import 'services/user_context.dart';
 
 class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
   static _MyAppState? of(BuildContext context) =>
       context.findAncestorStateOfType<_MyAppState>();
+
   @override
   State<MyApp> createState() => _MyAppState();
 }
 
 class _MyAppState extends State<MyApp> {
-  late Box prefs;
-  bool darkMode = false;
+  late final Box _prefs;
+  bool _darkMode = false;
 
   @override
   void initState() {
     super.initState();
-    prefs = Hive.box('prefs');
-    darkMode = prefs.get('darkMode', defaultValue: false);
+    _prefs = Hive.box('prefs');
+    _darkMode = (_prefs.get('darkMode') ?? _prefs.get('dark_mode') ?? false) ==
+        true;
   }
 
   void toggleDarkMode(bool value) {
-    setState(() => darkMode = value);
-    prefs.put('darkMode', darkMode);
+    setState(() => _darkMode = value);
+    _prefs.put('darkMode', value);
+    _prefs.put('dark_mode', value);
   }
 
   @override
@@ -45,12 +52,40 @@ class _MyAppState extends State<MyApp> {
       ),
       useMaterial3: true,
     );
+
     return MaterialApp(
       title: 'THODW AQX',
       theme: lightTheme,
       darkTheme: darkTheme,
-      themeMode: darkMode ? ThemeMode.dark : ThemeMode.light,
-      home: const HomeScreen(),
+      themeMode: _darkMode ? ThemeMode.dark : ThemeMode.light,
+      home: StreamBuilder(
+        stream: AuthService.authStateChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(
+              body: Center(child: CircularProgressIndicator()),
+            );
+          }
+          if (!snapshot.hasData) {
+            UserContext.clear();
+            return const LoginScreen();
+          }
+          return FutureBuilder<bool>(
+            future: AuthService.currentUserMustChangePassword(),
+            builder: (context, mustChangeSnapshot) {
+              if (mustChangeSnapshot.connectionState == ConnectionState.waiting) {
+                return const Scaffold(
+                  body: Center(child: CircularProgressIndicator()),
+                );
+              }
+              if (mustChangeSnapshot.data == true) {
+                return const ForcePasswordChangeScreen();
+              }
+              return const HomeScreen();
+            },
+          );
+        },
+      ),
       debugShowCheckedModeBanner: false,
     );
   }
