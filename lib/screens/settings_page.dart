@@ -4,6 +4,9 @@ import 'package:hive/hive.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/state_cache.dart';
 import '../services/divers_service.dart';
+import '../services/user_context.dart';
+import '../services/auth_service.dart';
+import '../services/admin_service.dart';
 
 import '../core/constants.dart';
 import '../core/departments.dart';
@@ -21,6 +24,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage> {
   late Box diversBox;
+  bool get _isAdmin => UserContext.isAdmin;
   int currentlyIn = 0;
   Timer? _timer;
   bool darkMode = false;
@@ -223,7 +227,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           actions: [
-            if (isEdit)
+            if (isEdit && _isAdmin)
               TextButton(
                 onPressed: () async {
                   final ok = await showDialog<bool>(
@@ -428,11 +432,6 @@ class _SettingsPageState extends State<SettingsPage> {
     MyApp.of(context)?.toggleDarkMode(value);
     setState(() => darkMode = value);
     Hive.box('prefs').put('darkMode', value);
-    try {
-      await FirebaseFirestore.instance.collection('prefs').doc('app').set({
-        'darkMode': value,
-      }, SetOptions(merge: true));
-    } catch (_) {}
   }
 
   void _resetCheckIns() {
@@ -488,9 +487,350 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
+  Future<String?> _promptCurrentPassword({String title = 'Confirm Admin Password'}) async {
+    final controller = TextEditingController();
+    String? error;
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Enter your current password to continue.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: controller,
+                obscureText: true,
+                autofocus: true,
+                decoration: InputDecoration(
+                  labelText: 'Current Password',
+                  border: const OutlineInputBorder(),
+                  errorText: error,
+                ),
+                onSubmitted: (_) async {
+                  if (controller.text.trim().isEmpty) {
+                    setDialogState(() => error = 'Password is required.');
+                    return;
+                  }
+                  Navigator.pop(ctx, controller.text.trim());
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (controller.text.trim().isEmpty) {
+                  setDialogState(() => error = 'Password is required.');
+                  return;
+                }
+                Navigator.pop(ctx, controller.text.trim());
+              },
+              child: const Text('Confirm'),
+            ),
+          ],
+        ),
+      ),
+    );
+    controller.dispose();
+    return result;
+  }
+
+  Future<bool> _reauthForAdminAction({String title = 'Confirm Admin Password'}) async {
+    final password = await _promptCurrentPassword(title: title);
+    if (password == null) return false;
+    try {
+      await AuthService.reauthenticateCurrentUser(currentPassword: password);
+      return true;
+    } catch (e) {
+      if (mounted) _snack('Password confirmation failed.');
+      return false;
+    }
+  }
+
+  Future<void> _runAdminAction(Future<void> Function() action) async {
+    try {
+      await action();
+    } catch (e) {
+      if (!mounted) return;
+      _snack(e.toString().replaceFirst('Exception: ', ''));
+    }
+  }
+
+  Future<void> _showCreateLoginUserDialog() async {
+    final melcoController = TextEditingController();
+    final nameController = TextEditingController();
+    final tempPasswordController = TextEditingController(text: 'Welcome2026');
+    String role = 'operator';
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Create Login User'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: melcoController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Melco ID',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Employee Name',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: role,
+                  decoration: const InputDecoration(
+                    labelText: 'Role',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'operator', child: Text('Operator')),
+                    DropdownMenuItem(value: 'admin', child: Text('Admin')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) setDialogState(() => role = value);
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: tempPasswordController,
+                  decoration: const InputDecoration(
+                    labelText: 'Temporary Password',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final melcoId = melcoController.text.trim();
+                final displayName = nameController.text.trim();
+                final tempPassword = tempPasswordController.text.trim();
+                if (melcoId.isEmpty || displayName.isEmpty || tempPassword.isEmpty) {
+                  _snack('Fill in Melco ID, employee name, and temporary password.');
+                  return;
+                }
+                final ok = await _reauthForAdminAction(title: 'Confirm Password to Create User');
+                if (!ok) return;
+                await _runAdminAction(() async {
+                  await AdminService.createUserByAdmin(
+                    melcoId: melcoId,
+                    displayName: displayName,
+                    role: role,
+                    tempPassword: tempPassword,
+                  );
+                  if (!mounted) return;
+                  Navigator.pop(ctx);
+                  _snack('Login user created.');
+                });
+              },
+              child: const Text('Create'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    melcoController.dispose();
+    nameController.dispose();
+    tempPasswordController.dispose();
+  }
+
+  Future<void> _showManageLoginUsersDialog() async {
+    Future<List<Map<String, dynamic>>> loader() => AdminService.listUsers();
+
+    await showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Manage Login Users'),
+          content: SizedBox(
+            width: 560,
+            child: FutureBuilder<List<Map<String, dynamic>>>(
+              future: loader(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const SizedBox(
+                    height: 220,
+                    child: Center(child: CircularProgressIndicator()),
+                  );
+                }
+                if (snapshot.hasError) {
+                  return SizedBox(
+                    height: 220,
+                    child: Center(
+                      child: Text(
+                        snapshot.error.toString().replaceFirst('Exception: ', ''),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  );
+                }
+                final users = snapshot.data ?? const <Map<String, dynamic>>[];
+                if (users.isEmpty) {
+                  return const SizedBox(
+                    height: 180,
+                    child: Center(child: Text('No login users found.')),
+                  );
+                }
+                return SizedBox(
+                  height: 420,
+                  child: ListView.separated(
+                    itemCount: users.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (_, index) {
+                      final user = users[index];
+                      final active = user['active'] == true;
+                      final mustChange = user['mustChangePassword'] == true ||
+                          user['requirePasswordChange'] == true;
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(vertical: 6),
+                        title: Text(
+                          '${user['displayName'] ?? user['melcoId'] ?? 'User'} (${user['melcoId'] ?? '-'})',
+                        ),
+                        subtitle: Text(
+                          '${user['role'] ?? 'operator'} • ${active ? 'Active' : 'Disabled'}${mustChange ? ' • Must change password' : ''}',
+                        ),
+                        trailing: Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            TextButton(
+                              onPressed: () async {
+                                final ok = await _reauthForAdminAction(
+                                  title: 'Confirm Password to Reset User Password',
+                                );
+                                if (!ok) return;
+                                await _runAdminAction(() async {
+                                  await AdminService.resetUserPasswordByAdmin(
+                                    uid: user['uid'].toString(),
+                                  );
+                                  if (!mounted) return;
+                                  Navigator.pop(ctx);
+                                  _snack('Password reset to Welcome2026.');
+                                });
+                              },
+                              child: const Text('Reset Password'),
+                            ),
+                            TextButton(
+                              onPressed: () async {
+                                final ok = await _reauthForAdminAction(
+                                  title: active
+                                      ? 'Confirm Password to Disable User'
+                                      : 'Confirm Password to Enable User',
+                                );
+                                if (!ok) return;
+                                await _runAdminAction(() async {
+                                  await AdminService.setUserActiveStateByAdmin(
+                                    uid: user['uid'].toString(),
+                                    active: !active,
+                                  );
+                                  if (!mounted) return;
+                                  Navigator.pop(ctx);
+                                  _snack(active ? 'User disabled.' : 'User enabled.');
+                                });
+                              },
+                              child: Text(active ? 'Disable' : 'Enable'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                );
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _checkAdminBackend() async {
+    await _runAdminAction(() async {
+      final result = await AdminService.adminHealthCheck();
+      if (!mounted) return;
+      _snack(result['ok'] == true ? 'Admin backend OK.' : 'Admin backend check failed.');
+    });
+  }
+
+  Future<void> _forcePasswordChangeForAllUsers() async {
+    final ok = await _reauthForAdminAction(
+      title: 'Confirm Password to Force Password Change',
+    );
+    if (!ok) return;
+    await _runAdminAction(() async {
+      final result = await AdminService.forcePasswordChangeForAllUsers();
+      if (!mounted) return;
+      _snack('Marked ${result['affectedUsers'] ?? 0} active user(s) for password change.');
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final scale = appScale(context);
+    if (!_isAdmin) {
+      return Scaffold(
+        body: SafeArea(
+          child: Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.lock_outline, size: 56 * scale),
+                SizedBox(height: 12 * scale),
+                Text(
+                  'Admin access required',
+                  style: TextStyle(fontSize: 22 * scale, fontWeight: FontWeight.bold),
+                ),
+                SizedBox(height: 8 * scale),
+                Text(
+                  'This section is restricted to authorized admins.',
+                  textAlign: TextAlign.center,
+                ),
+                SizedBox(height: 16 * scale),
+                ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Back'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     final list = divers;
 
     return Scaffold(
@@ -548,7 +888,7 @@ class _SettingsPageState extends State<SettingsPage> {
                               'Add Diver',
                               style: TextStyle(fontSize: 16 * scale),
                             ),
-                            onPressed: _showAddDialog,
+                            onPressed: _isAdmin ? _showAddDialog : null,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: Colors.blueAccent,
                               foregroundColor: Colors.white,
@@ -612,6 +952,60 @@ class _SettingsPageState extends State<SettingsPage> {
                     ],
                   ),
                 ),
+                if (_isAdmin) ...[
+                  SizedBox(height: 12 * scale),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16 * scale),
+                    child: Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(14 * scale),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Login User Management',
+                              style: TextStyle(
+                                fontSize: 18 * scale,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            SizedBox(height: 6 * scale),
+                            const Text(
+                              'Create users, reset temporary passwords, activate/deactivate accounts, and check the admin backend.',
+                            ),
+                            SizedBox(height: 12 * scale),
+                            Wrap(
+                              spacing: 10 * scale,
+                              runSpacing: 10 * scale,
+                              children: [
+                                ElevatedButton.icon(
+                                  onPressed: _showCreateLoginUserDialog,
+                                  icon: const Icon(Icons.person_add_alt_1),
+                                  label: const Text('Create Login User'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: _showManageLoginUsersDialog,
+                                  icon: const Icon(Icons.manage_accounts),
+                                  label: const Text('Manage Login Users'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: _checkAdminBackend,
+                                  icon: const Icon(Icons.cloud_done_outlined),
+                                  label: const Text('Admin Check'),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: _forcePasswordChangeForAllUsers,
+                                  icon: const Icon(Icons.lock_reset),
+                                  label: const Text('Force Password Change All'),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
                 // Reset is always allowed; divers currently IN WATER are preserved.
                 SizedBox(height: 12 * scale),
                 SizedBox(height: 12 * scale),

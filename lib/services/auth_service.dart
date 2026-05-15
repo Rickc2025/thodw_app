@@ -5,10 +5,7 @@ class AuthService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
   static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  static const String bootstrapAdminMelcoId = '1015083';
-  static const String bootstrapAdminPassword = 'Welcome2026';
-
-  static String melcoIdToEmail(String melcoId) => '${melcoId.trim()}@thodw.local';
+  static String melcoIdToEmail(String melcoId) => '${melcoId.trim()}@hodw.local';
 
   static User? get currentUser => _auth.currentUser;
 
@@ -23,34 +20,6 @@ class AuthService {
     }
   }
 
-  static Future<void> ensureBootstrapAdminExists() async {
-    final usersRef = _firestore.collection('users');
-    final existing = await usersRef.where('melcoId', isEqualTo: bootstrapAdminMelcoId).limit(1).get();
-    if (existing.docs.isNotEmpty) return;
-
-    try {
-      final cred = await _auth.createUserWithEmailAndPassword(
-        email: melcoIdToEmail(bootstrapAdminMelcoId),
-        password: bootstrapAdminPassword,
-      );
-
-      await usersRef.doc(cred.user!.uid).set({
-        'melcoId': bootstrapAdminMelcoId,
-        'displayName': 'Ricardo Costa Silva',
-        'role': 'admin',
-        'active': true,
-        'mustChangePassword': true,
-        'requirePasswordChange': true,
-        'createdAt': FieldValue.serverTimestamp(),
-        'createdBy': 'bootstrap',
-      }, SetOptions(merge: true));
-    } on FirebaseAuthException catch (e) {
-      if (e.code != 'email-already-in-use') rethrow;
-      final snap = await usersRef.where('melcoId', isEqualTo: bootstrapAdminMelcoId).limit(1).get();
-      if (snap.docs.isEmpty) rethrow;
-    }
-  }
-
   static Future<UserCredential> signInWithMelcoId({required String melcoId, required String password}) {
     return _auth.signInWithEmailAndPassword(
       email: melcoIdToEmail(melcoId),
@@ -59,6 +28,20 @@ class AuthService {
   }
 
   static Future<void> signOut() => _auth.signOut();
+
+  static Future<void> reauthenticateCurrentUser({required String currentPassword}) async {
+    final user = currentUser;
+    if (user == null) throw FirebaseAuthException(code: 'no-current-user');
+    final melcoId = user.email?.replaceAll('@hodw.local', '').trim();
+    if (melcoId == null || melcoId.isEmpty) {
+      throw FirebaseAuthException(code: 'missing-melco-id');
+    }
+    final credential = EmailAuthProvider.credential(
+      email: melcoIdToEmail(melcoId),
+      password: currentPassword,
+    );
+    await user.reauthenticateWithCredential(credential);
+  }
 
   static Future<Map<String, dynamic>?> currentUserProfile() async {
     final user = currentUser;
