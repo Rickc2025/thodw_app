@@ -63,11 +63,15 @@ class AuthService {
   static Future<void> changeCurrentPassword(String newPassword) async {
     final user = currentUser;
     if (user == null) throw FirebaseAuthException(code: 'no-current-user');
+
     await user.updatePassword(newPassword);
-    await _firestore.collection('users').doc(user.uid).set({
+    await user.getIdToken(true);
+
+    await _firestore.collection('users').doc(user.uid).update({
       'mustChangePassword': false,
       'requirePasswordChange': false,
       'lastPasswordChangedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 }

@@ -70,15 +70,31 @@ class _MyAppState extends State<MyApp> {
             UserContext.clear();
             return const LoginScreen();
           }
-          return FutureBuilder<bool>(
-            future: AuthService.currentUserMustChangePassword(),
-            builder: (context, mustChangeSnapshot) {
-              if (mustChangeSnapshot.connectionState == ConnectionState.waiting) {
+          return FutureBuilder<Map<String, dynamic>?>(
+            future: AuthService.currentUserProfile(),
+            builder: (context, profileSnapshot) {
+              if (profileSnapshot.connectionState == ConnectionState.waiting) {
                 return const Scaffold(
                   body: Center(child: CircularProgressIndicator()),
                 );
               }
-              if (mustChangeSnapshot.data == true) {
+
+              final profile = profileSnapshot.data;
+              final isActive = profile != null && profile['active'] != false;
+              if (profile == null || !isActive) {
+                UserContext.clear();
+                return const LoginScreen();
+              }
+
+              UserContext.melcoId = profile['melcoId']?.toString();
+              UserContext.role = profile['role']?.toString();
+              UserContext.displayName =
+                  profile['displayName']?.toString() ??
+                  profile['employeeName']?.toString();
+
+              final mustChange = profile['mustChangePassword'] == true ||
+                  profile['requirePasswordChange'] == true;
+              if (mustChange) {
                 return const ForcePasswordChangeScreen();
               }
               return const HomeScreen();

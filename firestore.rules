@@ -1,0 +1,85 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDocPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function userDoc() {
+      return get(userDocPath());
+    }
+
+    function userExists() {
+      return isSignedIn() && exists(userDocPath());
+    }
+
+    function isActiveUser() {
+      return userExists() && userDoc().data.active == true;
+    }
+
+    function isAdmin() {
+      return isActiveUser() && userDoc().data.role == 'admin';
+    }
+
+    function userOwnsDoc(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /users/{userId} {
+      allow read: if isAdmin() || (userOwnsDoc(userId) && isActiveUser());
+      allow create: if userOwnsDoc(userId);
+      allow update: if isAdmin()
+        || (userOwnsDoc(userId)
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+            'mustChangePassword',
+            'requirePasswordChange',
+            'lastPasswordChangedAt',
+            'updatedAt'
+          ])
+          && request.resource.data.mustChangePassword == false
+          && request.resource.data.requirePasswordChange == false);
+      allow delete: if false;
+    }
+
+    match /divers/{docId} {
+      allow read: if isActiveUser();
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /showdeck_aqc/{docId} {
+      allow read: if isActiveUser();
+      allow create, update, delete: if isActiveUser();
+    }
+
+    match /checkins/{docId} {
+      allow read: if isActiveUser();
+      allow create, update: if isActiveUser();
+      allow delete: if isAdmin();
+    }
+
+    match /logs/{docId} {
+      allow read: if isActiveUser();
+      allow create: if isActiveUser();
+      allow update, delete: if isAdmin();
+    }
+
+    match /audit_logs/{docId} {
+      allow read: if isAdmin();
+      allow create: if false;
+      allow update, delete: if false;
+    }
+
+    match /prefs/{docId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

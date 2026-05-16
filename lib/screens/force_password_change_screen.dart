@@ -42,6 +42,11 @@ class _ForcePasswordChangeScreenState
           'Password must contain letters and numbers and be at least 8 characters.',
         );
       }
+      if (p1 == 'Welcome2026') {
+        throw Exception(
+          'New password cannot be the default temporary password Welcome2026.',
+        );
+      }
       if (p1 != p2) throw Exception('Passwords do not match.');
       await AuthService.changeCurrentPassword(p1);
       final profile = await AuthService.currentUserProfile();

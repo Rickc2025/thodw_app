@@ -1,8 +1,4 @@
-import { createRemoteJWKSet, SignJWT, jwtVerify, importPKCS8 } from 'jose';
-
-const GOOGLE_JWKS = createRemoteJWKSet(
-  new URL('https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com'),
-);
+import { SignJWT, importPKCS8 } from 'jose';
 
 const FIRESTORE_BASE = 'https://firestore.googleapis.com/v1';
 const IDENTITY_TOOLKIT_BASE = 'https://identitytoolkit.googleapis.com/v1';
@@ -36,6 +32,13 @@ function errorResponse(status, error, detail) {
 
 function melcoIdToEmail(melcoId) {
   return `${String(melcoId).trim()}@hodw.local`;
+}
+
+function parseAllowlist(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
 }
 
 function sanitizeRole(role) {
@@ -72,12 +75,33 @@ function extractBearer(request) {
   return match?.[1] || null;
 }
 
-async function verifyFirebaseToken(idToken, projectId) {
-  const { payload } = await jwtVerify(idToken, GOOGLE_JWKS, {
-    issuer: `https://securetoken.google.com/${projectId}`,
-    audience: projectId,
-  });
-  return payload;
+async function verifyFirebaseToken(idToken, projectId, env) {
+  if (!env.FIREBASE_WEB_API_KEY) {
+    throw new Error('Worker missing FIREBASE_WEB_API_KEY.');
+  }
+
+  const body = await fetchJson(
+    `${IDENTITY_TOOLKIT_BASE}/accounts:lookup?key=${encodeURIComponent(env.FIREBASE_WEB_API_KEY)}`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ idToken }),
+    },
+  );
+
+  const user = (body.users || [])[0];
+  if (!user || user.validSince == null) {
+    throw new Error('Invalid Firebase token');
+  }
+
+  return {
+    user_id: user.localId,
+    email: user.email,
+    aud: projectId,
+    iss: `https://securetoken.google.com/${projectId}`,
+  };
 }
 
 async function fetchJson(url, init = {}) {
@@ -103,6 +127,15 @@ async function fetchJson(url, init = {}) {
 async function getGoogleAccessToken(env) {
   const now = Math.floor(Date.now() / 1000);
   if (cachedAccessToken && cachedAccessToken.expiresAt > now + 60) {
+    return cachedAccessToken.token;
+  }
+
+  const preMintedExpiry = Number(env.GOOGLE_ACCESS_TOKEN_EXPIRES_AT || 0);
+  if (env.GOOGLE_ACCESS_TOKEN && preMintedExpiry > now + 60) {
+    cachedAccessToken = {
+      token: String(env.GOOGLE_ACCESS_TOKEN),
+      expiresAt: preMintedExpiry,
+    };
     return cachedAccessToken.token;
   }
 
@@ -149,10 +182,15 @@ async function googleApiJson(env, url, init = {}) {
   if (!headers.has('content-type') && init.body != null) {
     headers.set('content-type', 'application/json');
   }
-  return fetchJson(url, {
-    ...init,
-    headers,
-  });
+  try {
+    return await fetchJson(url, {
+      ...init,
+      headers,
+    });
+  } catch (error) {
+    error.message = `[googleApiJson ${init.method || 'GET'} ${url}] ${error.message}`;
+    throw error;
+  }
 }
 
 function toFirestoreFields(data) {
@@ -328,7 +366,7 @@ async function requireAdmin(request, env) {
     payload = { user_id: env.TEST_TRUST_BEARER_UID };
   } else {
     try {
-      payload = await verifyFirebaseToken(idToken, env.FIREBASE_PROJECT_ID);
+      payload = await verifyFirebaseToken(idToken, env.FIREBASE_PROJECT_ID, env);
     } catch (error) {
       return {
         error: errorResponse(401, 'Invalid Firebase token', String(error?.message || error)),
@@ -336,7 +374,42 @@ async function requireAdmin(request, env) {
     }
   }
 
-  const adminUser = await readAdminRecord(env, payload.user_id);
+  let adminUser;
+  try {
+    adminUser = await readAdminRecord(env, payload.user_id);
+  } catch (error) {
+    const quota = quotaDetail(error);
+    if (quota) {
+      const emailAllowlist = parseAllowlist(env.FALLBACK_ADMIN_EMAILS);
+      const melcoAllowlist = parseAllowlist(env.FALLBACK_ADMIN_MELCO_IDS);
+      const tokenEmail = String(payload.email || '').trim().toLowerCase();
+      const tokenMelcoId = tokenEmail.endsWith('@hodw.local')
+        ? tokenEmail.replace(/@hodw\.local$/i, '')
+        : '';
+
+      if ((tokenEmail && emailAllowlist.includes(tokenEmail)) ||
+          (tokenMelcoId && melcoAllowlist.includes(tokenMelcoId))) {
+        return {
+          payload,
+          adminUser: {
+            role: 'admin',
+            active: true,
+            melcoId: tokenMelcoId || undefined,
+            displayName: payload.email || 'Admin',
+            source: 'quota-fallback-allowlist',
+          },
+        };
+      }
+
+      return {
+        error: errorResponse(503, 'Admin backend temporarily hit quota limits.', `[requireAdmin readAdminRecord] ${quota}`),
+      };
+    }
+    return {
+      error: errorResponse(500, 'Failed to load admin profile.', String(error?.message || error)),
+    };
+  }
+
   if (!adminUser || adminUser.active !== true || adminUser.role !== 'admin') {
     return { error: errorResponse(403, 'Admin access required') };
   }
@@ -383,6 +456,11 @@ async function listManagedUsers(env) {
     });
 }
 
+function quotaDetail(error) {
+  const detail = String(error?.body?.error?.message || error?.message || error || '');
+  return /quota/i.test(detail) ? detail : null;
+}
+
 async function handleAdminCheck(request, env) {
   const auth = await requireAdmin(request, env);
   if (auth.error) return auth.error;
@@ -400,8 +478,16 @@ async function handleListUsers(request, env) {
   const auth = await requireAdmin(request, env);
   if (auth.error) return auth.error;
 
-  const users = await listManagedUsers(env);
-  return json({ ok: true, users });
+  try {
+    const users = await listManagedUsers(env);
+    return json({ ok: true, users });
+  } catch (error) {
+    const quota = quotaDetail(error);
+    if (quota) {
+      return errorResponse(503, 'Admin backend temporarily hit quota limits.', quota);
+    }
+    return errorResponse(500, 'Failed to list users.', String(error?.body?.error?.message || error?.message || error));
+  }
 }
 
 async function handleCreateUser(request, env) {
@@ -625,6 +711,10 @@ export default {
     try {
       return await handleRequest(request, env);
     } catch (error) {
+      const quota = quotaDetail(error);
+      if (quota) {
+        return errorResponse(503, 'Admin backend temporarily hit quota limits.', quota);
+      }
       return errorResponse(500, 'Unhandled worker failure.', String(error?.message || error));
     }
   },

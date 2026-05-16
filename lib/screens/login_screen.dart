@@ -15,6 +15,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final _melcoController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _loading = false;
+  bool _obscurePassword = true;
   String? _error;
 
   @override
@@ -42,15 +43,16 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       final profile = await AuthService.currentUserProfile();
-      if (profile == null || profile['active'] != true) {
+      final isActive = profile != null && profile['active'] != false;
+      if (profile == null || !isActive) {
         await AuthService.signOut();
         throw Exception('Account not authorized.');
       }
 
       UserContext.melcoId = profile['melcoId']?.toString();
       UserContext.role = profile['role']?.toString();
-      UserContext.displayName =
-          profile['displayName']?.toString() ?? profile['employeeName']?.toString();
+      UserContext.displayName = profile['displayName']?.toString() ??
+          profile['employeeName']?.toString();
 
       if (!mounted) return;
 
@@ -58,7 +60,9 @@ class _LoginScreenState extends State<LoginScreen> {
           profile['requirePasswordChange'] == true;
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => mustChange ? const ForcePasswordChangeScreen() : const HomeScreen(),
+          builder: (_) => mustChange
+              ? const ForcePasswordChangeScreen()
+              : const HomeScreen(),
         ),
       );
     } catch (e) {
@@ -84,10 +88,12 @@ class _LoginScreenState extends State<LoginScreen> {
           child: LayoutBuilder(
             builder: (context, constraints) {
               return SingleChildScrollView(
-                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
                 padding: const EdgeInsets.all(24),
                 child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
+                  constraints:
+                      BoxConstraints(minHeight: constraints.maxHeight - 48),
                   child: Center(
                     child: ConstrainedBox(
                       constraints: const BoxConstraints(maxWidth: 420),
@@ -97,21 +103,51 @@ class _LoginScreenState extends State<LoginScreen> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              const Text('HODW AQX Login', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                              const Text(
+                                'HODW AQX Login',
+                                style: TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                               const SizedBox(height: 20),
                               TextField(
                                 controller: _melcoController,
                                 keyboardType: TextInputType.number,
-                                decoration: const InputDecoration(labelText: 'Melco ID', border: OutlineInputBorder()),
+                                decoration: const InputDecoration(
+                                  labelText: 'Melco ID',
+                                  border: OutlineInputBorder(),
+                                  prefixIcon: Icon(Icons.badge_outlined),
+                                ),
                               ),
                               const SizedBox(height: 12),
                               TextField(
                                 controller: _passwordController,
-                                obscureText: true,
-                                decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()),
+                                obscureText: _obscurePassword,
+                                decoration: InputDecoration(
+                                  labelText: 'Password',
+                                  border: const OutlineInputBorder(),
+                                  prefixIcon: const Icon(Icons.lock_outline),
+                                  suffixIcon: IconButton(
+                                    onPressed: () {
+                                      setState(() {
+                                        _obscurePassword = !_obscurePassword;
+                                      });
+                                    },
+                                    icon: Icon(
+                                      _obscurePassword
+                                          ? Icons.visibility_outlined
+                                          : Icons.visibility_off_outlined,
+                                    ),
+                                  ),
+                                ),
                               ),
                               const SizedBox(height: 12),
-                              if (_error != null) Text(_error!, style: const TextStyle(color: Colors.red)),
+                              if (_error != null)
+                                Text(
+                                  _error!,
+                                  style: const TextStyle(color: Colors.red),
+                                ),
                               if (_loading) const SizedBox(height: 12),
                               if (_loading) const LinearProgressIndicator(),
                               const SizedBox(height: 12),
@@ -119,7 +155,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                 width: double.infinity,
                                 child: ElevatedButton(
                                   onPressed: _loading ? null : _login,
-                                  child: Text(_loading ? 'Signing in...' : 'Login'),
+                                  child: Text(
+                                    _loading ? 'Signing in...' : 'Login',
+                                  ),
                                 ),
                               ),
                             ],

@@ -8,6 +8,7 @@ import '../core/navigation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/state_cache.dart';
 import '../widgets/top_alert.dart';
+import '../services/user_context.dart';
 import 'checkin_names_screen2.dart';
 import 'history_page.dart';
 import 'settings_page.dart';
@@ -89,6 +90,7 @@ class _DepartmentScreenState extends State<DepartmentScreen> {
   }
 
   void _openSettings() {
+    if (!UserContext.isAdmin) return;
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const SettingsPage()),

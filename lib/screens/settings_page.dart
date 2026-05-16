@@ -802,35 +802,6 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   Widget build(BuildContext context) {
     final scale = appScale(context);
-    if (!_isAdmin) {
-      return Scaffold(
-        body: SafeArea(
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.lock_outline, size: 56 * scale),
-                SizedBox(height: 12 * scale),
-                Text(
-                  'Admin access required',
-                  style: TextStyle(fontSize: 22 * scale, fontWeight: FontWeight.bold),
-                ),
-                SizedBox(height: 8 * scale),
-                Text(
-                  'This section is restricted to authorized admins.',
-                  textAlign: TextAlign.center,
-                ),
-                SizedBox(height: 16 * scale),
-                ElevatedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Back'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
     final list = divers;
 
     return Scaffold(
@@ -989,11 +960,6 @@ class _SettingsPageState extends State<SettingsPage> {
                                   label: const Text('Manage Login Users'),
                                 ),
                                 OutlinedButton.icon(
-                                  onPressed: _checkAdminBackend,
-                                  icon: const Icon(Icons.cloud_done_outlined),
-                                  label: const Text('Admin Check'),
-                                ),
-                                OutlinedButton.icon(
                                   onPressed: _forcePasswordChangeForAllUsers,
                                   icon: const Icon(Icons.lock_reset),
                                   label: const Text('Force Password Change All'),
@@ -1148,10 +1114,14 @@ class _SettingsPageState extends State<SettingsPage> {
                                   trailing: IconButton(
                                     icon: Icon(
                                       Icons.edit,
-                                      color: Colors.blueGrey[700],
+                                      color: _isAdmin
+                                          ? Colors.blueGrey[700]
+                                          : Colors.grey[400],
                                       size: 22 * scale,
                                     ),
-                                    onPressed: () => _showEditDiverDialog(d),
+                                    onPressed: _isAdmin
+                                        ? () => _showEditDiverDialog(d)
+                                        : null,
                                   ),
                                 ),
                               );

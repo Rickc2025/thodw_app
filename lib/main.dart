@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'firebase_options.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'services/state_cache.dart';
 
 import 'app.dart';
@@ -26,7 +25,7 @@ Future<void> main() async {
     ),
   );
 
-  // Initialize Firebase and sign in anonymously so clients can write
+  // Initialize Firebase.
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -35,7 +34,6 @@ Future<void> main() async {
     // Fallback: initialize with platform defaults if firebase_options is missing for this target
     await Firebase.initializeApp();
   }
-  await FirebaseAuth.instance.signInAnonymously();
   // Ensure local boxes exist for legacy reads during migration
   await Hive.initFlutter();
   await Hive.openBox('divers');

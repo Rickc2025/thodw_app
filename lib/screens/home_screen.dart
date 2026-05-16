@@ -239,13 +239,11 @@ class _HomeScreenState extends State<HomeScreen> {
           Positioned(
             bottom: 32 * scale,
             right: 32 * scale,
-            child: UserContext.isAdmin
-                ? IconButton(
-                    tooltip: "Settings",
-                    icon: Icon(Icons.settings, size: 40 * scale),
-                    onPressed: _openSettings,
-                  )
-                : const SizedBox.shrink(),
+            child: IconButton(
+              tooltip: "Settings",
+              icon: Icon(Icons.settings, size: 40 * scale),
+              onPressed: _openSettings,
+            ),
           ),
         ],
       ),

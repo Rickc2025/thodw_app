@@ -1,12 +1,12 @@
 import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:http/http.dart' as http;
 
 class AdminService {
-  // Canonical production admin backend for THODW is the Cloudflare Worker.
   static const String workerBaseUrl =
-      'https://thodw-auth-provisioner.aqxdivelog.workers.dev';
+      'https://thodw-admin-worker.akosiricardocosta.workers.dev';
 
   static Future<Map<String, String>> _headers() async {
     final user = FirebaseAuth.instance.currentUser;
@@ -26,8 +26,10 @@ class AdminService {
       final error = data['error']?.toString();
       final detail = data['detail']?.toString();
       return Exception(
-        [if (error != null && error.isNotEmpty) error, if (detail != null && detail.isNotEmpty) detail]
-            .join(' '),
+        [
+          if (error != null && error.isNotEmpty) error,
+          if (detail != null && detail.isNotEmpty) detail,
+        ].join(' '),
       );
     } catch (_) {
       return Exception('Admin backend request failed (${response.statusCode}).');
@@ -63,14 +65,81 @@ class AdminService {
   }
 
   static Future<Map<String, dynamic>> adminHealthCheck() async {
-    return _getJson('/admin/check');
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      throw StateError('No logged-in user.');
+    }
+
+    final profile = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(currentUser.uid)
+        .get();
+    final data = profile.data();
+
+    return <String, dynamic>{
+      'ok': data != null && data['role'] == 'admin' && data['active'] != false,
+      'backend': 'firestore-direct',
+      'uid': currentUser.uid,
+      'melcoId': data?['melcoId']?.toString(),
+      'role': data?['role']?.toString(),
+    };
   }
 
   static Future<List<Map<String, dynamic>>> listUsers() async {
-    final data = await _getJson('/users');
-    return ((data['users'] as List?) ?? const <dynamic>[])
-        .map((item) => Map<String, dynamic>.from(item as Map))
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      throw StateError('No logged-in user.');
+    }
+
+    final snapshot = await FirebaseFirestore.instance.collection('users').get();
+    final users = snapshot.docs
+        .map((doc) {
+          final data = doc.data();
+          final email = data['email']?.toString() ?? '';
+          final melcoId = data['melcoId']?.toString() ??
+              (email.endsWith('@hodw.local')
+                  ? email.replaceFirst(
+                      RegExp(r'@hodw\.local$', caseSensitive: false),
+                      '',
+                    )
+                  : '');
+          final normalizedMelcoId =
+              melcoId.isEmpty && email.endsWith('@hodw.local')
+              ? email.substring(0, email.length - '@hodw.local'.length)
+              : melcoId;
+          if (normalizedMelcoId.isEmpty) return null;
+
+          final active = data['active'] != false && data['disabled'] != true;
+          final mustChange = data['mustChangePassword'] == true ||
+              data['requirePasswordChange'] == true;
+
+          return <String, dynamic>{
+            'uid': doc.id,
+            'melcoId': normalizedMelcoId,
+            'displayName': data['displayName']?.toString() ??
+                data['employeeName']?.toString() ??
+                normalizedMelcoId,
+            'role': data['role']?.toString() == 'admin' ? 'admin' : 'operator',
+            'active': active,
+            'mustChangePassword': mustChange,
+            'requirePasswordChange': mustChange,
+            'disabledInAuth': data['disabled'] == true,
+            'email': email,
+            'createdAt': data['createdAt'],
+            'updatedAt': data['updatedAt'],
+            'lastPasswordResetAt': data['lastPasswordResetAt'],
+          };
+        })
+        .whereType<Map<String, dynamic>>()
         .toList();
+
+    users.sort((a, b) {
+      final nameA = '${a['displayName']} ${a['melcoId']}'.toLowerCase();
+      final nameB = '${b['displayName']} ${b['melcoId']}'.toLowerCase();
+      return nameA.compareTo(nameB);
+    });
+
+    return users;
   }
 
   static Future<Map<String, dynamic>> createUserByAdmin({

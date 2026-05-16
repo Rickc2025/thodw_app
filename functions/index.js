@@ -16,7 +16,7 @@ function assertAdmin(auth) {
 const DEFAULT_TEMP_PASSWORD = 'Welcome2026';
 
 function melcoIdToEmail(melcoId) {
-  return `${String(melcoId).trim()}@thodw.local`;
+  return `${String(melcoId).trim()}@hodw.local`;
 }
 
 function isStrongPassword(password) {
@@ -45,6 +45,7 @@ exports.createUserByAdmin = onCall(async (request) => {
       email,
       password: passwordToSet,
       displayName: displayName || String(melcoId),
+      disabled: false,
     });
   } catch (e) {
     if (e.code === 'auth/email-already-exists') {
@@ -142,6 +143,8 @@ exports.setUserActiveStateByAdmin = onCall(async (request) => {
   if (!uid || typeof active !== 'boolean') {
     throw new HttpsError('invalid-argument', 'uid and boolean active are required.');
   }
+
+  await admin.auth().updateUser(String(uid), { disabled: !active });
 
   await admin.firestore().collection('users').doc(String(uid)).set({ active }, { merge: true });
 
