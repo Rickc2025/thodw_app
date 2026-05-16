@@ -72,70 +72,90 @@ class _ForcePasswordChangeScreenState
 
   @override
   Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+
     return Scaffold(
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 460),
-          child: Card(
-            margin: const EdgeInsets.all(24),
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'Change Password',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 10),
-                  if ((UserContext.displayName ?? '').trim().isNotEmpty) ...[
-                    Text(
-                      'Welcome, ${UserContext.displayName!}',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+      resizeToAvoidBottomInset: true,
+      body: SafeArea(
+        child: AnimatedPadding(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+          padding: EdgeInsets.only(bottom: bottomInset > 0 ? 12 : 0),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+                padding: const EdgeInsets.all(24),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 460),
+                      child: Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Text(
+                                'Change Password',
+                                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 10),
+                              if ((UserContext.displayName ?? '').trim().isNotEmpty) ...[
+                                Text(
+                                  'Welcome, ${UserContext.displayName!}',
+                                  style: const TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                                const SizedBox(height: 8),
+                              ],
+                              const Text(
+                                'You must change your temporary password before using the system.',
+                                textAlign: TextAlign.center,
+                              ),
+                              const SizedBox(height: 20),
+                              TextField(
+                                controller: _passwordController,
+                                obscureText: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'New Password',
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              TextField(
+                                controller: _confirmController,
+                                obscureText: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'Confirm Password',
+                                  border: OutlineInputBorder(),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              if (_error != null)
+                                Text(_error!, style: const TextStyle(color: Colors.red)),
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                width: double.infinity,
+                                child: ElevatedButton(
+                                  onPressed: _loading ? null : _submit,
+                                  child: Text(_loading ? 'Saving...' : 'Save Password'),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              TextButton(
+                                onPressed: _loading ? null : _backToLogin,
+                                child: const Text('Back to Login'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                  ],
-                  const Text(
-                    'You must change your temporary password before using the system.',
-                    textAlign: TextAlign.center,
                   ),
-                  const SizedBox(height: 20),
-                  TextField(
-                    controller: _passwordController,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'New Password',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _confirmController,
-                    obscureText: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Confirm Password',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (_error != null)
-                    Text(_error!, style: const TextStyle(color: Colors.red)),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      onPressed: _loading ? null : _submit,
-                      child: Text(_loading ? 'Saving...' : 'Save Password'),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: _loading ? null : _backToLogin,
-                    child: const Text('Back to Login'),
-                  ),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           ),
         ),
       ),

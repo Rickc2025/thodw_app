@@ -18,10 +18,37 @@
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+  >
   <meta name="description" content="A new Flutter project.">
   
   <!-- Force HTML renderer to improve iPad (Desktop Website UA) compatibility -->
   <meta name="flutter-web-renderer" content="html">
+
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      min-height: 100%;
+      background: #f8f6fa;
+      overscroll-behavior-y: none;
+    }
+
+    body {
+      position: fixed;
+      inset: 0;
+    }
+
+    flutter-view,
+    flt-glass-pane,
+    flt-scene-host {
+      background: #f8f6fa;
+    }
+  </style>
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
@@ -46,6 +73,31 @@
           });
         } catch (_) { /* ignore */ }
       }
+    })();
+  </script>
+  <script>
+    (function() {
+      function syncViewportHeight() {
+        var viewport = window.visualViewport;
+        var height = viewport ? viewport.height : window.innerHeight;
+        document.documentElement.style.height = height + 'px';
+        document.body.style.height = height + 'px';
+      }
+
+      syncViewportHeight();
+      window.addEventListener('resize', syncViewportHeight);
+      window.addEventListener('orientationchange', function() {
+        setTimeout(syncViewportHeight, 60);
+      });
+
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', syncViewportHeight);
+        window.visualViewport.addEventListener('scroll', syncViewportHeight);
+      }
+
+      document.addEventListener('focusout', function() {
+        setTimeout(syncViewportHeight, 160);
+      });
     })();
   </script>
   <script src="flutter_bootstrap.js" async></script>
